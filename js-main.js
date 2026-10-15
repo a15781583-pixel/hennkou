@@ -75,30 +75,41 @@ function showTab(tabName) {
   });
 
   // setupApiKeyPersistence / loadSavedApiKey はjs-ai-features.jsのinitAiFeatures()が担当
-  loadReviewDone();
-  loadDailyProgress(); // 日別進捗データを読み込む
-  await loadEntries();
-  renderAll();
-  loadRefEntries(); // 参考書データを先に読み込む（DOMContentLoadedから移動）
-  renderIntegratedSchedule(); // 「スケジュール」タブは初期表示タブなので、読み込み直後に描画する
-  renderMonthGoalCard();      // 月目標カードを初期表示
-  document.getElementById('monthGoalEditBtn')?.addEventListener('click', openMonthGoalEditor);
-  document.getElementById('monthGoalSaveBtn')?.addEventListener('click', handleMonthGoalSave);
-  document.getElementById('monthGoalCancelBtn')?.addEventListener('click', closeMonthGoalEditor);
-  await loadLeech();
-  renderLeech();
+  // 各ステップを個別に保護する：1つが失敗しても、後続（特にスケジュール表示）は必ず実行する
+  const safe = async (label, fn) => {
+    try { await fn(); } catch (e) { console.error('[init] ' + label + ' に失敗:', e); }
+  };
+
+  await safe('復習完了データの読込', () => loadReviewDone());
+  await safe('日別進捗の読込', () => loadDailyProgress());
+  await safe('単語データの読込', () => loadEntries());
+  await safe('単語一覧の描画', () => renderAll());
+  await safe('参考書データの読込', () => loadRefEntries()); // 参考書データを先に読み込む（DOMContentLoadedから移動）
+  await safe('統合スケジュールの描画', () => renderIntegratedSchedule()); // 「スケジュール」タブは初期表示タブなので、読み込み直後に描画する
+  await safe('月目標カードの描画', () => {
+    renderMonthGoalCard();      // 月目標カードを初期表示
+    document.getElementById('monthGoalEditBtn')?.addEventListener('click', openMonthGoalEditor);
+    document.getElementById('monthGoalSaveBtn')?.addEventListener('click', handleMonthGoalSave);
+    document.getElementById('monthGoalCancelBtn')?.addEventListener('click', closeMonthGoalEditor);
+  });
+  await safe('苦手単語の読込・描画', async () => {
+    await loadLeech();
+    renderLeech();
+  });
 
   // ---- 成績・弱点分析タブの初期化 ----
-  const scoreDateEl = document.getElementById('scoreDate');
-  if(scoreDateEl) scoreDateEl.value = todayISO();
-  // scoreAddBtn はjs-test.js定義のhandleScoreAddを使うためここで登録
-  if(document.getElementById('scoreAddBtn')) document.getElementById('scoreAddBtn').addEventListener('click', handleScoreAdd);
-  // handleScoreImageFile / runWeaknessAnalysis はjs-ai-features.jsのinitAiFeatures()が担当
-  await loadScores();
-  renderScoreList();
-  try {
-    const savedAnalysis = localStorage.getItem(ANALYSIS_KEY);
-    // renderAnalysisResultはjs-ai-features.jsで定義されるためtypeof守衛
-    if(savedAnalysis && typeof renderAnalysisResult === 'function') renderAnalysisResult(JSON.parse(savedAnalysis).result);
-  } catch(e) {}
+  await safe('成績・弱点分析タブの初期化', async () => {
+    const scoreDateEl = document.getElementById('scoreDate');
+    if(scoreDateEl) scoreDateEl.value = todayISO();
+    // scoreAddBtn はjs-test.js定義のhandleScoreAddを使うためここで登録
+    if(document.getElementById('scoreAddBtn')) document.getElementById('scoreAddBtn').addEventListener('click', handleScoreAdd);
+    // handleScoreImageFile / runWeaknessAnalysis はjs-ai-features.jsのinitAiFeatures()が担当
+    await loadScores();
+    renderScoreList();
+    try {
+      const savedAnalysis = localStorage.getItem(ANALYSIS_KEY);
+      // renderAnalysisResultはjs-ai-features.jsで定義されるためtypeof守衛
+      if(savedAnalysis && typeof renderAnalysisResult === 'function') renderAnalysisResult(JSON.parse(savedAnalysis).result);
+    } catch(e) {}
+  });
 })();
