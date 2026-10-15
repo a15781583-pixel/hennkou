@@ -53,7 +53,15 @@ window.addEventListener('DOMContentLoaded', () => {
         exitEditMode: exitRefEditMode,
         // 参考書は編集時、旧プランをスプレッドせず新しいフィールド一式に置き換える
         // （byAmount/byRangeの切替時に古いendDate/amountPerDayが残らないようにするため）
-        applyEdit: (item, newFields) => ({ ...newFields, id: item.id }),
+        applyEdit: (item, newFields) => {
+          // ★修正：範囲（開始・終了ページ）を変えた場合、旧範囲に基づく進捗記録を破棄する
+          if (item.startNum !== newFields.startNum || item.endNum !== newFields.endNum) {
+            dailyProgress = dailyProgress.filter(p =>
+              !(p.type === 'book' && (p.planId || p.entryId) === item.id));
+            saveDailyProgress();
+          }
+          return { ...newFields, id: item.id };
+        },
         idPrefix: 'ref_',
         save: saveRefEntries,
         render: renderRefSchedule,
