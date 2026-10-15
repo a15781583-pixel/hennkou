@@ -933,11 +933,16 @@ function buildNewChunkProgressItemHtml(chunk, cfg, existingRecords, dateStr) {
   // ★ composite key：ownerId + チャンク本来の日付 + 開始位置（同一教材の複数チャンク衝突防止）
   // 繰り越し分は originalDate、通常分は dateStr（= chunk.date）を使う
   const chunkBaseDate = chunk.carriedForward ? (chunk.originalDate || chunk.date) : chunk.date;
-  const chunkEntryId  = `${ownerId}_${chunkBaseDate}_${chunk.rangeStart}`;
+  // ★修正：実績チャンク（保存済み記録から再生成）は、保存時の複合キーをそのまま使う
+  //   （繰越分は保存後に今日付けで再生成されるため、キーを組み直すと記録が見つからず二重になる）
+  const chunkEntryId  = chunk.progressEntryId || `${ownerId}_${chunkBaseDate}_${chunk.rangeStart}`;
+  // ★修正：実績チャンクの rangeEnd は actualEnd なので、予定終了は plannedEnd を使う
+  //   （これで途中完了が「完了」扱いにならず、再保存でも予定終了が縮まない）
+  const planEnd       = chunk.isFromProgress ? (chunk.plannedEnd ?? chunk.rangeEnd) : chunk.rangeEnd;
 
   const rec = existingRecords.find(p => p.entryId === chunkEntryId && p.type === cfg.type);
   const recordedVal  = rec ? rec.actualEnd : '';
-  const plannedCount = chunk.rangeEnd - chunk.rangeStart + 1;
+  const plannedCount = planEnd - chunk.rangeStart + 1;
   const bookName = cfg.getBookName(chunk);
 
   // STEP 8: 未完了繰越バッジを統一形式で表示（carriedForward / isCarriedNew 両対応）
@@ -946,17 +951,17 @@ function buildNewChunkProgressItemHtml(chunk, cfg, existingRecords, dateStr) {
     : '';
 
   const statusHtml = rec
-    ? `<span class="progress-status-badge ${rec.actualEnd >= chunk.rangeEnd ? 'ps-on-track' : 'ps-behind'}">
-         ${rec.actualEnd >= chunk.rangeEnd ? '✅ 完了' : `⚠️ ${rec.actualEnd - chunk.rangeStart + 1}/${plannedCount}${cfg.unit}完了`}
+    ? `<span class="progress-status-badge ${rec.actualEnd >= planEnd ? 'ps-on-track' : 'ps-behind'}">
+         ${rec.actualEnd >= planEnd ? '✅ 完了' : `⚠️ ${rec.actualEnd - chunk.rangeStart + 1}/${plannedCount}${cfg.unit}完了`}
        </span>`
     : '';
 
-  const dataAttrs = `data-entry-id="${chunkEntryId}" data-${cfg.ownerAttrName}="${ownerId}" data-type="${cfg.type}" data-planned-start="${chunk.rangeStart}" data-planned-end="${chunk.rangeEnd}" data-date="${dateStr}" data-book-name="${escapeHtml(bookName)}"`;
+  const dataAttrs = `data-entry-id="${chunkEntryId}" data-${cfg.ownerAttrName}="${ownerId}" data-type="${cfg.type}" data-planned-start="${chunk.rangeStart}" data-planned-end="${planEnd}" data-date="${dateStr}" data-book-name="${escapeHtml(bookName)}"`;
 
   return `
       <div class="progress-item">
-        <span class="progress-plan-label">${escapeHtml(bookName)} ${chunk.rangeStart}〜${chunk.rangeEnd}（予定 ${plannedCount}${cfg.unit}）${cfNote}</span>
-        ${buildProgControlHtml(chunk.rangeStart, chunk.rangeEnd, recordedVal, cfg.type, statusHtml, dataAttrs)}
+        <span class="progress-plan-label">${escapeHtml(bookName)} ${chunk.rangeStart}〜${planEnd}（予定 ${plannedCount}${cfg.unit}）${cfNote}</span>
+        ${buildProgControlHtml(chunk.rangeStart, planEnd, recordedVal, cfg.type, statusHtml, dataAttrs)}
       </div>`;
 }
 
@@ -1178,80 +1183,33 @@ function initProgressControls(container, dateStr, baseId) {
     }
 
     /* ── 直接入力フィールド ── */
-    // 【修正済み】入力の途中（Backspaceで桁を消す／新しい数字を打ち始める）の中間値で
-    //   「完了」「進んでいない」へ自動切り替えすると、入力欄ごと閉じてしまう不具合があった。
-    //   → 入力中は「予定範囲の途中」の値だけをリアルタイム反映し、
-    //     モードの切り替え・範囲外チェックは確定時（Enter／フォーカスを外す）に行う。
     if (progDisplayInput) {
-      // 範囲外の入力に出す注意書き（入力欄の下に1行だけ表示）
-      const hintEl = document.createElement('div');
-      hintEl.className = 'prog-input-hint';
-      hintEl.style.cssText = 'display:none;margin-top:6px;font-size:.78rem;color:#b3261e;';
-      const stepperEl = progDisplayInput.closest('.prog-stepper');
-      if (stepperEl) stepperEl.insertAdjacentElement('afterend', hintEl);
-      const showHint = (msg) => {
-        hintEl.textContent = msg;
-        hintEl.style.display = msg ? 'block' : 'none';
-      };
-
-      // ① 入力中：予定範囲の途中（開始番号〜終了番号-1）の値だけ反映する。
-      //    空欄・範囲外の中間値（例：「35」と打つ途中の「3」）は何もしない＝入力欄は閉じない。
       progDisplayInput.addEventListener('input', () => {
         const val = parseInt(progDisplayInput.value, 10);
-        if (isNaN(val) || val < rangeStart || val >= rangeEnd) return;
-        showHint('');
-        const completedCount = val - rangeStart + 1;
-        const pct = plannedCount > 0 ? Math.min(100, Math.round(completedCount / plannedCount * 100)) : 0;
-        if (barFill)    barFill.style.width    = pct + '%';
-        if (countValEl) countValEl.textContent = completedCount;
-        if (progDisplay) progDisplay.textContent = val;
-        hiddenInput.value = val;
-        hiddenInput.dispatchEvent(new Event('input'));
-      });
-
-      // ② 確定時（Enter／フォーカスを外す／スピンボタン）：ここで初めてモードを切り替える
-      const commitDirectInput = () => {
-        const val = parseInt(progDisplayInput.value, 10);
-        const minVal = rangeStart - 1;
-        const maxVal = rangeEnd + 50;
-        const lastValid = parseInt(hiddenInput.value, 10);
-
-        // 空欄・範囲外 → 直前の有効な値に戻す（勝手に「完了」「進んでいない」にはしない）
-        if (isNaN(val) || val < minVal || val > maxVal) {
-          if (!isNaN(lastValid)) progDisplayInput.value = lastValid;
-          if (!isNaN(val)) showHint(`${minVal}〜${maxVal} の範囲で入力してください（元の値に戻しました）`);
-          return;
-        }
-        showHint('');
-        updateDisplay(val);   // 表示・バー・hidden input を同期してプレビュー更新
-        if (val >= rangeEnd) {
-          setActiveState('done');
-          // 予定より進んだ分は「余剰」パネルに反映
-          if (extraPanel) {
-            const extraInput = extraPanel.querySelector('.prog-extra-input');
-            if (extraInput) extraInput.value = String(val - rangeEnd);
-            extraPanel.style.display = 'block';
+        if (!isNaN(val)) {
+          const clampedVal = Math.max(rangeStart - 1, Math.min(rangeEnd + 50, val));
+          const completedCount = Math.max(0, clampedVal - rangeStart + 1);
+          const pct = plannedCount > 0 ? Math.min(100, Math.round(completedCount / plannedCount * 100)) : 0;
+          if (barFill)    barFill.style.width   = pct + '%';
+          if (countValEl) countValEl.textContent = completedCount;
+          if (progDisplay) progDisplay.textContent = clampedVal;
+          hiddenInput.value = clampedVal;
+          hiddenInput.dispatchEvent(new Event('input'));
+          // 値に応じてボタン状態を自動切り替え
+          if (clampedVal >= rangeEnd) {
+            setActiveState('done');
+          } else if (clampedVal === rangeStart - 1) {
+            setActiveState('not-progressed');
+          } else {
+            setActiveState('partial');
           }
-        } else if (val === minVal) {
-          setActiveState('not-progressed');
-        } else {
-          setActiveState('partial');
         }
-      };
-      progDisplayInput.addEventListener('change', commitDirectInput);
-      progDisplayInput.addEventListener('blur',   commitDirectInput);
-
-      // ③ 入力欄に入ったら中身を全選択 → そのまま数字を打てば上書きできる
-      //    （初期値を消さずに打ち足して「3205」のような値になるのを防ぐ）
-      let justFocused = false;
-      progDisplayInput.addEventListener('focus', () => {
-        justFocused = true;
-        progDisplayInput.select();
       });
-      progDisplayInput.addEventListener('mouseup', e => {
-        if (justFocused) { e.preventDefault(); justFocused = false; }
+      progDisplayInput.addEventListener('blur', () => {
+        // ブラー時に範囲外の値をクランプして同期
+        const val = parseInt(hiddenInput.value, 10);
+        if (!isNaN(val)) progDisplayInput.value = val;
       });
-
       // Enterキーで入力確定
       progDisplayInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); progDisplayInput.blur(); }
@@ -1347,6 +1305,12 @@ function previewProgressAdjustment(container, dateStr, baseId) {
   }
 }
 
+// ★修正：復習インターバルの取得を単語・参考書で共通化（参考書も登録時に選んだ間隔を使う）
+//   buildAllReviews() と同じ規則（未設定・空配列なら DEFAULT_INTERVALS）に揃える。
+function getIntervalsOf(entity) {
+  return (entity && entity.intervals && entity.intervals.length) ? entity.intervals : DEFAULT_INTERVALS;
+}
+
 /**
  * 進捗を保存してスケジュールを再描画
  * @param {string} [baseId] - buildProgressInputSection に渡したものと同じベースID
@@ -1407,6 +1371,12 @@ function handleProgressSave(dateStr, baseId) {
       // book タイプは planId（参考書プランID）も別途保持する
       // entryId は「planId_originalDate_rangeStart」の複合キーなので refEntries への紐付けに planId を使う
       const planId = input.dataset.planId || entryId;
+
+      // ★追加：教材の終了番号でクランプ（範囲外の番号が復習・完了判定に混入するのを防ぐ）
+      const material = type === 'word'
+        ? entries.find(e => e.id === originEntryId)
+        : refEntries.find(r => r.id === planId);
+      const actualEnd = material ? Math.min(val, material.endNum) : val;
       // ── Bug 1 修正：保存前に旧キーを reviewDoneSet から除去 ──
       // 再保存前に旧キーを reviewDoneSet から除去する。
       // キー形式: `${prefix}_prog_${resolved}_${p.date}_${p.plannedStart}_${n}` (actualEnd はキーに含めない)
@@ -1422,9 +1392,7 @@ function handleProgressSave(dateStr, baseId) {
             ? entries.find(e => e.id === resolved)
             : refEntries.find(r => r.id === resolved);
           if (!entity) return;
-          const intervals = type === 'book'
-            ? DEFAULT_INTERVALS
-            : ((entity && entity.intervals) ? entity.intervals : DEFAULT_INTERVALS);
+          const intervals = getIntervalsOf(entity);
           intervals.forEach(n => {
             const key = `${prefix}_prog_${resolved}_${p.date}_${p.plannedStart}_${n}`;
             reviewDoneSet.delete(key);
@@ -1443,9 +1411,9 @@ function handleProgressSave(dateStr, baseId) {
         type,
         plannedStart,
         plannedEnd,
-        actualEnd: val,
+        actualEnd,
         bookName,
-        notProgressed: val === plannedStart - 1  // ← 追加: 進捗なし（actualEnd === plannedStart - 1）のフラグ
+        notProgressed: actualEnd === plannedStart - 1  // ← 追加: 進捗なし（actualEnd === plannedStart - 1）のフラグ
       };
       dailyProgress.push(record);
       savedRecords.push(record);
@@ -1595,9 +1563,7 @@ function handleProgressClear(dateStr) {
       const entity = p.type === 'word'
         ? entries.find(e => e.id === resolved)
         : refEntries.find(r => r.id === resolved);
-      const intervals = p.type === 'book'
-        ? DEFAULT_INTERVALS
-        : ((entity && entity.intervals) ? entity.intervals : DEFAULT_INTERVALS);
+      const intervals = getIntervalsOf(entity);
       intervals.forEach(n => {
         const key = `${prefix}_prog_${resolved}_${p.date}_${p.plannedStart}_${n}`;
         reviewDoneSet.delete(key);
