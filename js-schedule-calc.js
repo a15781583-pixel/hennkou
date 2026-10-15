@@ -157,9 +157,9 @@ function buildAllReviews(){
     if (c.isFromProgress) return false;
     const chunkKey = `${c.entryId}_${c.date}_${c.rangeStart}`;
     return !dailyProgress.some(p => {
-      if (p.type !== 'word') return false;
+      if (p.type !== 'word' || p.notProgressed) return false; // ★notProgressed追加（繰越判定と揃える）
       if (p.originEntryId != null) return p.entryId === chunkKey; // 新形式
-      return p.date === c.date && p.entryId === c.entryId && p.rangeStart === c.rangeStart; // 旧形式
+      return p.date === c.date && p.entryId === c.entryId; // 旧形式（★レコードに無い p.rangeStart の比較を削除）
     });
   });
 
@@ -190,7 +190,7 @@ function buildAllReviews(){
     if (c.isFromProgress) return false;
     const chunkKey = `${c.planId}_${c.date}_${c.rangeStart}`;
     return !dailyProgress.some(p => {
-      if (p.type !== 'book') return false;
+      if (p.type !== 'book' || p.notProgressed) return false; // ★notProgressed追加（繰越判定と揃える）
       if (p.planId && p.planId !== p.entryId) return p.entryId === chunkKey; // 新形式
       return p.date === c.date && (p.planId || p.entryId) === c.planId;      // 旧形式
     });
@@ -234,6 +234,7 @@ function buildAllReviews(){
 function buildCarryForwardList(chunks, type, hasRecordFn) {
   const todayStr = todayISO();
   return chunks
+    .filter(c => !c.isFromProgress) // ★修正：実績チャンク（完了済み）は繰越対象にしない
     .filter(c => c.date < todayStr)
     .filter(c => {
       const latest = getLatestProgress(type === 'word' ? c.entryId : c.planId, type);
@@ -382,7 +383,10 @@ function getLatestProgress(entryId, type) {
       // word: originEntryId（composite key 新形式）または entryId（旧形式）で照合
       return (p.originEntryId || p.entryId) === entryId;
     })
-    .sort((a, b) => b.date.localeCompare(a.date) || b.actualEnd - a.actualEnd);
+    // ★修正：到達番号（actualEnd）が最大の記録を最優先で返す。
+    //   日付優先だと、後日に繰越の穴埋め（小さい番号）だけを入力した際、
+    //   そちらが「最新」扱いとなり、完了済みの範囲が再配分されてしまう。
+    .sort((a, b) => b.actualEnd - a.actualEnd || b.date.localeCompare(a.date));
   return records[0] || null;
 }
 
@@ -516,7 +520,9 @@ function computeAdjustedSchedule(materialType, material) {
     .map(p => ({
       date: p.date,
       rangeStart: p.plannedStart,
-      rangeEnd: p.actualEnd,
+      rangeEnd: p.actualEnd,          // doneToday 計算用に据え置き
+      plannedEnd: p.plannedEnd,       // ★追加：途中完了の判定・再保存時の予定終了を保持
+      progressEntryId: p.entryId,     // ★追加：保存時の複合キーをそのまま持たせる
       ...idFields,
       isFromProgress: true
     }));
