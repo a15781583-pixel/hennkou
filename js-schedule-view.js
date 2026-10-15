@@ -697,7 +697,7 @@ function renderWeeklySummary(scheduleData) {
       <div class="ws-title">📊 今週のまとめ</div>
       <div class="ws-range">${rangeLabel}</div>
     </div>
-    ${bodyHtml}`;
+    <div class="ws-display">${bodyHtml}</div>`;
 }
 
 /* ---------- 完了後の「次のタスク設定」案内 ---------- */
