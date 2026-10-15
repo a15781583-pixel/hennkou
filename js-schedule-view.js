@@ -1178,33 +1178,80 @@ function initProgressControls(container, dateStr, baseId) {
     }
 
     /* ── 直接入力フィールド ── */
+    // 【修正済み】入力の途中（Backspaceで桁を消す／新しい数字を打ち始める）の中間値で
+    //   「完了」「進んでいない」へ自動切り替えすると、入力欄ごと閉じてしまう不具合があった。
+    //   → 入力中は「予定範囲の途中」の値だけをリアルタイム反映し、
+    //     モードの切り替え・範囲外チェックは確定時（Enter／フォーカスを外す）に行う。
     if (progDisplayInput) {
+      // 範囲外の入力に出す注意書き（入力欄の下に1行だけ表示）
+      const hintEl = document.createElement('div');
+      hintEl.className = 'prog-input-hint';
+      hintEl.style.cssText = 'display:none;margin-top:6px;font-size:.78rem;color:#b3261e;';
+      const stepperEl = progDisplayInput.closest('.prog-stepper');
+      if (stepperEl) stepperEl.insertAdjacentElement('afterend', hintEl);
+      const showHint = (msg) => {
+        hintEl.textContent = msg;
+        hintEl.style.display = msg ? 'block' : 'none';
+      };
+
+      // ① 入力中：予定範囲の途中（開始番号〜終了番号-1）の値だけ反映する。
+      //    空欄・範囲外の中間値（例：「35」と打つ途中の「3」）は何もしない＝入力欄は閉じない。
       progDisplayInput.addEventListener('input', () => {
         const val = parseInt(progDisplayInput.value, 10);
-        if (!isNaN(val)) {
-          const clampedVal = Math.max(rangeStart - 1, Math.min(rangeEnd + 50, val));
-          const completedCount = Math.max(0, clampedVal - rangeStart + 1);
-          const pct = plannedCount > 0 ? Math.min(100, Math.round(completedCount / plannedCount * 100)) : 0;
-          if (barFill)    barFill.style.width   = pct + '%';
-          if (countValEl) countValEl.textContent = completedCount;
-          if (progDisplay) progDisplay.textContent = clampedVal;
-          hiddenInput.value = clampedVal;
-          hiddenInput.dispatchEvent(new Event('input'));
-          // 値に応じてボタン状態を自動切り替え
-          if (clampedVal >= rangeEnd) {
-            setActiveState('done');
-          } else if (clampedVal === rangeStart - 1) {
-            setActiveState('not-progressed');
-          } else {
-            setActiveState('partial');
-          }
+        if (isNaN(val) || val < rangeStart || val >= rangeEnd) return;
+        showHint('');
+        const completedCount = val - rangeStart + 1;
+        const pct = plannedCount > 0 ? Math.min(100, Math.round(completedCount / plannedCount * 100)) : 0;
+        if (barFill)    barFill.style.width    = pct + '%';
+        if (countValEl) countValEl.textContent = completedCount;
+        if (progDisplay) progDisplay.textContent = val;
+        hiddenInput.value = val;
+        hiddenInput.dispatchEvent(new Event('input'));
+      });
+
+      // ② 確定時（Enter／フォーカスを外す／スピンボタン）：ここで初めてモードを切り替える
+      const commitDirectInput = () => {
+        const val = parseInt(progDisplayInput.value, 10);
+        const minVal = rangeStart - 1;
+        const maxVal = rangeEnd + 50;
+        const lastValid = parseInt(hiddenInput.value, 10);
+
+        // 空欄・範囲外 → 直前の有効な値に戻す（勝手に「完了」「進んでいない」にはしない）
+        if (isNaN(val) || val < minVal || val > maxVal) {
+          if (!isNaN(lastValid)) progDisplayInput.value = lastValid;
+          if (!isNaN(val)) showHint(`${minVal}〜${maxVal} の範囲で入力してください（元の値に戻しました）`);
+          return;
         }
+        showHint('');
+        updateDisplay(val);   // 表示・バー・hidden input を同期してプレビュー更新
+        if (val >= rangeEnd) {
+          setActiveState('done');
+          // 予定より進んだ分は「余剰」パネルに反映
+          if (extraPanel) {
+            const extraInput = extraPanel.querySelector('.prog-extra-input');
+            if (extraInput) extraInput.value = String(val - rangeEnd);
+            extraPanel.style.display = 'block';
+          }
+        } else if (val === minVal) {
+          setActiveState('not-progressed');
+        } else {
+          setActiveState('partial');
+        }
+      };
+      progDisplayInput.addEventListener('change', commitDirectInput);
+      progDisplayInput.addEventListener('blur',   commitDirectInput);
+
+      // ③ 入力欄に入ったら中身を全選択 → そのまま数字を打てば上書きできる
+      //    （初期値を消さずに打ち足して「3205」のような値になるのを防ぐ）
+      let justFocused = false;
+      progDisplayInput.addEventListener('focus', () => {
+        justFocused = true;
+        progDisplayInput.select();
       });
-      progDisplayInput.addEventListener('blur', () => {
-        // ブラー時に範囲外の値をクランプして同期
-        const val = parseInt(hiddenInput.value, 10);
-        if (!isNaN(val)) progDisplayInput.value = val;
+      progDisplayInput.addEventListener('mouseup', e => {
+        if (justFocused) { e.preventDefault(); justFocused = false; }
       });
+
       // Enterキーで入力確定
       progDisplayInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); progDisplayInput.blur(); }
