@@ -6,8 +6,8 @@
 <title>Self STUDYing</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" defer></script>
 <link rel="stylesheet" href="css-style.css">
 <link rel="stylesheet" href="css-ai-features.css">
 </head>
@@ -284,10 +284,14 @@
           <button id="saveRefPlanBtn" class="btn-primary" style="flex:1; min-width:200px;">スケジュールを生成して登録</button>
           <button id="cancelRefEditBtn" class="btn-ghost" style="display:none;">編集をキャンセル</button>
         </div>
-        <div class="entry-list" id="refEntryList"></div>
 
       </div><!-- /.ref-setting-body -->
-    </details>
+    </details><!-- /#refSettingDetails -->
+
+    <!-- 登録済み一覧は折りたたみの外に置く（登録後に設定欄を閉じても一覧が見えるように） -->
+    <div class="entry-list" id="refEntryList"></div>
+
+    </details><!-- /#refSetup -->
 
   </div>
 
