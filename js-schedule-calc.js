@@ -431,6 +431,73 @@ const MATERIAL_CONFIGS = {
 };
 
 /**
+ * 進捗記録の「取りこぼし」（番号の穴）を、繰越チャンクとして返す。
+ *
+ * 穴 ＝ 「教材の開始番号〜最新の到達番号」のうち、どの進捗記録にも含まれない番号。
+ * 例1：月〜水の分を入力しないまま、今日(木)の分だけ完了した → 月〜水の範囲が穴になる
+ * 例2：繰り越された範囲を途中まで、今日の範囲を完了で入力した → 途中の残りが穴になる
+ * 以前は、最新の到達番号の“次”から数え直すだけだったため、穴の部分が画面から消えていた。
+ *
+ * 置き場所のルール：
+ *  ・今日「途中まで」と入力した残り → 次の学習日へ繰り越す（当日中には置かない）
+ *  ・それ以外（未着手・前日までの途中の残り）→ 今日に繰り越す（遅れた分は今日やる）
+ */
+function buildLeftoverChunks(material, progressRecords, originalChunks, idFields, upTo, todayStr, nextStudyDay) {
+  // 取り込み済みの範囲（マージして昇順に）
+  const covered = progressRecords
+    .filter(p => p.actualEnd >= p.plannedStart)
+    .map(p => [p.plannedStart, p.actualEnd])
+    .sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  covered.forEach(([s, e]) => {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1] + 1) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  });
+  // 穴（未取り込み範囲）を求める
+  const gaps = [];
+  let cur = material.startNum;
+  merged.forEach(([s, e]) => {
+    if (s > cur) gaps.push([cur, Math.min(s - 1, upTo)]);
+    cur = Math.max(cur, e + 1);
+  });
+  if (cur <= upTo) gaps.push([cur, upTo]);
+
+  // 穴の番号ごとに「どこから来た未完了か」を判定し、同じ出どころが続く範囲を1チャンクにまとめる
+  const recsDesc = progressRecords.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const originOf = (n) => {
+    // 途中まで入力された記録の“残り”に該当する番号
+    const tail = recsDesc.find(p => p.actualEnd < p.plannedEnd && n > p.actualEnd && n <= p.plannedEnd);
+    if (tail) return { src: tail.date, fromPartial: true };
+    // 一度も着手していない番号 → 元の予定日（無ければ今日）
+    const orig = originalChunks.find(c => n >= c.rangeStart && n <= c.rangeEnd);
+    return { src: (orig && orig.date < todayStr) ? orig.date : todayStr, fromPartial: false };
+  };
+
+  const out = [];
+  gaps.forEach(([gs, ge]) => {
+    let runStart = gs, runOrigin = originOf(gs);
+    for (let n = gs + 1; n <= ge + 1; n++) {
+      const o = n <= ge ? originOf(n) : null;
+      if (o && o.src === runOrigin.src && o.fromPartial === runOrigin.fromPartial) continue;
+      // 当日に「途中まで」と入力した残りは、次の学習日へ
+      const deferred = runOrigin.fromPartial && runOrigin.src === todayStr;
+      out.push({
+        date: deferred ? nextStudyDay : todayStr,
+        rangeStart: runStart,
+        rangeEnd: n - 1,
+        ...idFields,
+        isAdjusted: true,
+        ...(deferred ? { isCarriedNew: true } : { carriedForward: true }),
+        originalDate: runOrigin.src,
+      });
+      runStart = n; runOrigin = o;
+    }
+  });
+  return out;
+}
+
+/**
  * 進捗記録を考慮してチャンクを再計算する（単語・参考書共通）
  * @param {'word'|'book'} materialType - 教材の種別
  * @param {Object}        material     - entry（単語）または plan（参考書）
@@ -442,9 +509,10 @@ function computeAdjustedSchedule(materialType, material) {
 
   const originalChunks = cfg.computeBaseSchedule(material);
   const idFields = cfg.chunkIdFields(material); // 種別固有フィールドを事前に取得
+  const progressRecords = cfg.filterProgress(material.id);
 
   // [Step 1] dailyProgressから実績のみ構築
-  const pastChunks = cfg.filterProgress(material.id)
+  const pastChunks = progressRecords
     .map(p => ({
       date: p.date,
       rangeStart: p.plannedStart,
@@ -461,6 +529,19 @@ function computeAdjustedSchedule(materialType, material) {
   //   常に「明日以降」を未来分として扱うことで消失を防ぐ。
   const futureChunks = originalChunks.filter(c => c.date > todayStr);
 
+  const effectiveWeekdays = (material.weekdays && material.weekdays.length > 0)
+    ? material.weekdays
+    : [0, 1, 2, 3, 4, 5, 6];
+  // 今日の次の学習日（「途中まで」の残りの繰越先）
+  const nextStudyDay = findNextStudyDay(todayStr, effectiveWeekdays);
+
+  // ★ 最新の記録が「途中まで」か？（＝未完了の残りがある）
+  //   その記録が今日のものなら、残りは当日中に置かず、次の学習日へ繰り越す。
+  const isLatestPartial = latest.actualEnd < latest.plannedEnd;
+  const isPartialToday  = isLatestPartial && latest.date === todayStr;
+  // 前日以前の「途中まで」が残っている場合の繰越バッジ用（元の予定日）
+  const carryOrigin = isLatestPartial ? latest.date : null;
+
   const remainingStart = latest.actualEnd + 1;
   // BUGFIX③: endNum が undefined/null の場合（古いデータ等）は 0 をガード値として使用し、
   //           NaN が後続処理（remaining 計算・while ループ）へ伝播するのを防ぐ。
@@ -468,7 +549,14 @@ function computeAdjustedSchedule(materialType, material) {
   const remainingEnd   = material.endNum ?? 0;
   const remaining      = remainingEnd - remainingStart + 1;
 
-  if (remaining <= 0) return pastChunks; // 全完了
+  // ★ 取りこぼし（入力されなかった範囲・途中の残り）を繰越チャンクとして必ず残す
+  const leftoverChunks = buildLeftoverChunks(
+    material, progressRecords, originalChunks, idFields,
+    Math.min(latest.actualEnd, remainingEnd), todayStr, nextStudyDay
+  );
+  const head = [...pastChunks, ...leftoverChunks];
+
+  if (remaining <= 0) return head; // 最終番号まで到達
 
   // [Step 2] 今日の残キャパシティを確認し、未完了分を今日から順に割り当て
   // ▼ BUGFIX Step 2: 直近の進捗レコードの残量（latest.plannedEnd - latest.actualEnd）ではなく
@@ -483,8 +571,7 @@ function computeAdjustedSchedule(materialType, material) {
 
   // ▼ FIX: 元計画に「今日」の枠が無い場合でも、今日が学習曜日なら今日の枠を確保する。
   if (todayOriginalChunks.length === 0) {
-    const studyDays = (material.weekdays && material.weekdays.length > 0) ? material.weekdays : [0,1,2,3,4,5,6];
-    if (studyDays.includes(parseISO(todayStr).getDay())) {
+    if (effectiveWeekdays.includes(parseISO(todayStr).getDay())) {
       const perDay = material.planMode === 'byAmount'
         ? (material.amountPerDay || 1)
         : (originalChunks.length > 0
@@ -497,6 +584,10 @@ function computeAdjustedSchedule(materialType, material) {
     }
   }
 
+  // ★ 今日「途中まで」と入力した場合：今日の枠は使い切ったものとし、残りは今日に置かない
+  //   （残りは次の学習日以降へ繰り越す）
+  if (isPartialToday) todayCapacity = 0;
+
   const todayChunks = [];
   let futureStart = remainingStart;
 
@@ -508,13 +599,19 @@ function computeAdjustedSchedule(materialType, material) {
       rangeEnd: remainingStart + todayCount - 1,
       ...idFields,
       isAdjusted: true,
-      isCarriedNew: false
+      // 前日以前の「途中まで」の続きなら、繰越バッジを付ける
+      isCarriedNew: !!carryOrigin,
+      ...(carryOrigin ? { originalDate: carryOrigin } : {})
     });
     futureStart = remainingStart + todayCount;
   }
 
   const futureRemaining = remainingEnd - futureStart + 1;
-  if (futureRemaining <= 0) return [...pastChunks, ...todayChunks];
+  if (futureRemaining <= 0) return [...head, ...todayChunks];
+
+  // 「最初に割り当てる新規チャンク」＝未完了の残りの続き、のときだけ繰越バッジを付ける
+  //   （完了済みの翌日分に誤って「繰越」が付かないよう、carryOrigin がある場合に限定）
+  const isFirstCarried = (isFirst) => isFirst && todayChunks.length === 0 && !!carryOrigin;
 
   // [Step 3] 将来チャンクがない場合：新規タスクを生成して配分
   if (futureChunks.length === 0 || material.planMode === 'byAmount') {
@@ -531,30 +628,29 @@ function computeAdjustedSchedule(materialType, material) {
     let searchFrom = todayStr;
     let safety = 0;
     while (cursor <= remainingEnd && safety++ < 3650) {
-      // weekdays が空（未設定）の場合は毎日学習として全曜日を渡す（空配列チェックの安全ガード）
-      const effectiveWeekdays = (material.weekdays && material.weekdays.length > 0)
-        ? material.weekdays
-        : [0, 1, 2, 3, 4, 5, 6];
       const nextDate = findNextStudyDay(searchFrom, effectiveWeekdays);
       const count = Math.min(amountPerDay, remainingEnd - cursor + 1);
+      const carried = isFirstCarried(newChunks.length === 0);
       newChunks.push({
         date: nextDate,
         rangeStart: cursor,
         rangeEnd: cursor + count - 1,
         ...idFields,
         isAdjusted: true,
-        isCarriedNew: newChunks.length === 0 && todayChunks.length === 0
+        isCarriedNew: carried,
+        ...(carried ? { originalDate: carryOrigin } : {})
       });
       cursor += count;
       searchFrom = nextDate;
     }
-    return [...pastChunks, ...todayChunks, ...newChunks];
+    return [...head, ...todayChunks, ...newChunks];
   }
 
   // [Step 4] 将来チャンクに残量を均等配分
   const base   = Math.floor(futureRemaining / futureChunks.length);
   const rem    = futureRemaining % futureChunks.length;
   let cursor   = futureStart;
+  let firstAssigned = true;
 
   const newFutureChunks = futureChunks.flatMap((c, idx) => {
     const count      = base + (idx < rem ? 1 : 0);
@@ -562,11 +658,14 @@ function computeAdjustedSchedule(materialType, material) {
     const rangeStart = cursor;
     const rangeEnd   = cursor + count - 1;
     cursor = rangeEnd + 1;
+    const carried = isFirstCarried(firstAssigned);
+    firstAssigned = false;
     return [{ ...c, rangeStart, rangeEnd, isAdjusted: true,
-              isCarriedNew: idx === 0 && todayChunks.length === 0 }];
+              isCarriedNew: carried,
+              ...(carried ? { originalDate: carryOrigin } : {}) }];
   });
 
-  return [...pastChunks, ...todayChunks, ...newFutureChunks];
+  return [...head, ...todayChunks, ...newFutureChunks];
 }
 
 // ── 後方互換ラッパー：既存の呼び出し元（buildAllReviews等）を変更ゼロに保つ ──
