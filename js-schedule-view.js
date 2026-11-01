@@ -37,11 +37,13 @@ function reviewLegendHTML() {
     const { label, legendDays } = getIntervalTierStyle(tier);
     return `<span class="review-legend-badge tag-review-t${tier}">${label} <small>${legendDays}</small></span>`;
   }).join('\n    ');
-  return `<div class="review-legend">
+  // 【改善】凡例は初期状態で折りたたみ、「今日やること」が最初に目に入るようにする
+  return `<details class="review-legend-fold"><summary>🎯 復習ステップの見方</summary>
+  <div class="review-legend">
     <span class="review-legend-label">🎯 復習ステップ：</span>
     ${badges}
-    <span style="color:var(--ink-soft); margin-left:4px; font-size:.68rem;">数字が大きいほど記憶定着の山場です</span>
-  </div>`;
+    <span style="color:var(--ink-soft); margin-left:4px; font-size:.72rem;">数字が大きいほど記憶定着の山場です</span>
+  </div></details>`;
 }
 // ──────────────────────────────────────────────────────────────
 
@@ -246,7 +248,7 @@ function renderMergedSchedule(containerId){
   const { vocabChunks, refChunks, vocabReviews, refReviews } = buildScheduleData();
 
   if(entries.length === 0 && refEntries.length === 0){
-    area.innerHTML = `<div class="empty-state">まだ単語範囲・参考書が登録されていません。上のフォームから追加してください。</div>`;
+    area.innerHTML = buildOnboardingHtml();
     return;
   }
   if(vocabChunks.length === 0 && refChunks.length === 0){
@@ -537,8 +539,12 @@ function renderIntegratedSchedule() {
     container.appendChild(futureDetails);
   }
 
-  if (!container.querySelector('div:not(.review-legend):not(.schedule-beyond-notice)')) {
-    container.innerHTML += '<div style="text-align:center; color:#999; padding:20px;">この期間のスケジュールはありません。設定タブから登録してください。</div>';
+  if (entries.length === 0 && refEntries.length === 0) {
+    // 【改善】初回（何も登録されていない）：「予定なし」のカードの代わりに、使い方の3ステップと
+    //   登録タブへ移動するボタンを出す（凡例も不要なので消す）
+    container.innerHTML = buildOnboardingHtml();
+  } else if (!container.querySelector('div:not(.review-legend):not(.schedule-beyond-notice)')) {
+    container.insertAdjacentHTML('beforeend', '<div style="text-align:center; color:#999; padding:20px;">この期間のスケジュールはありません。設定タブから登録してください。</div>');
   }
 
 }
@@ -558,6 +564,12 @@ function renderMonthGoalCard() {
   const text = (goal && goal.text) ? goal.text.trim() : '';
   displayEl.textContent = text ? text : '目標が設定されていません。「編集」から入力してください。';
   if (inputEl) inputEl.value = text;
+  // 折りたたんだ見出しにも目標の1行目を出す（閉じていても目標が目に入る）
+  const sumEl = document.getElementById('monthGoalSummaryText');
+  if (sumEl) {
+    const first = text.split('\n')[0];
+    sumEl.textContent = text ? '：' + (first.length > 26 ? first.slice(0, 26) + '…' : first) : '（未設定）';
+  }
 }
 function openMonthGoalEditor() {
   const displayEl = document.getElementById('monthGoalDisplay');
@@ -1409,7 +1421,10 @@ function initProgressControls(container, dateStr, baseId) {
 function attachProgressInputHandlers(container, dateStr, baseId) {
   baseId = baseId || dateStr;
   container.querySelectorAll('.progress-num-input').forEach(input => {
-    input.addEventListener('input', () => previewProgressAdjustment(container, dateStr, baseId));
+    input.addEventListener('input', () => {
+      previewProgressAdjustment(container, dateStr, baseId);
+      updateProgressDirty(container); // 【追加】未記録の入力があるとき、記録ボタンで知らせる
+    });
   });
   // 新UIのインタラクションもここで初期化
   initProgressControls(container, dateStr, baseId);
@@ -1511,14 +1526,16 @@ function handleProgressSave(dateStr, baseId) {
   // 日付をまたいで画面を開いたままにしていた場合：古い日付のまま保存すると記録の日付がずれるため、
   // 保存せずに最新の日付で描き直す。
   if (dateStr !== todayISO()) {
-    alert('日付が変わっていました。最新の日付で画面を更新します。お手数ですが、もう一度入力してください。');
     renderAll();
     renderIntegratedSchedule();
     renderRefTodayCard();
+    showToast('日付が変わっていたため、画面を最新の日付に更新しました。お手数ですが、もう一度記録してください。', null, null, 8000);
     return;
   }
 
   const inputs = container.querySelectorAll('.progress-num-input');
+  // 【追加】保存前の状態を控えておく（保存直後の「元に戻す」用。状態は dailyProgress と reviewDoneSet のみ）
+  const undoSnap = { progress: JSON.stringify(dailyProgress), done: Array.from(reviewDoneSet) };
   let saved = 0;
   let unchanged = 0; // 記録済みから変更のなかった項目数
 
@@ -1618,7 +1635,7 @@ function handleProgressSave(dateStr, baseId) {
   });
 
   if (saved === 0) {
-    alert(unchanged > 0 ? '変更された項目がありません。' : '進捗を入力してから保存してください。');
+    showToast(unchanged > 0 ? '変更された項目がありません。' : '進捗を入力してから記録してください（「✅ 完了」などをタップ）。');
     return;
   }
 
@@ -1628,6 +1645,18 @@ function handleProgressSave(dateStr, baseId) {
   renderIntegratedSchedule();
   refreshAllSchedules();
   renderRefTodayCard();
+
+  // 【追加】記録できたことを知らせる（5秒間は「元に戻す」で取り消せる）
+  showToast(`${saved}件の進捗を記録しました。`, '元に戻す', () => {
+    dailyProgress = JSON.parse(undoSnap.progress);
+    reviewDoneSet = new Set(undoSnap.done);
+    saveDailyProgress();
+    saveReviewDone();
+    renderIntegratedSchedule();
+    refreshAllSchedules();
+    renderRefTodayCard();
+    showToast('記録を取り消しました。');
+  });
 
   // スケジュールタブ内の進捗セクションに単語復習プレビューを注入
   const wordRecordsForPreview = savedRecords.filter(r => r.type === 'word');
@@ -1853,3 +1882,54 @@ function renderAll(){
   refreshAllSchedules();
   renderTodayNew();
 }
+
+/* =========================================================
+   【追加】初回案内・未記録の進捗の検知
+========================================================= */
+
+// 初回（単語も参考書も未登録）に出す案内。「上のフォーム」ではなく、登録タブへ直接移動できるボタンを置く。
+function buildOnboardingHtml() {
+  return `<div class="onboarding-card">
+    <div class="ob-title">🌱 はじめに：1分で今日のタスクが出ます</div>
+    <ol class="ob-steps">
+      <li>単語帳か参考書を1つ登録する</li>
+      <li>この画面に、今日やることと復習が自動で並ぶ</li>
+      <li>終わったら「✅ 完了」をタップして記録する</li>
+    </ol>
+    <div class="ob-actions">
+      <button type="button" class="btn-primary" onclick="showTab('study')">📖 単語帳を登録する</button>
+      <button type="button" class="btn-ghost" onclick="showTab('reference')">📚 参考書を登録する</button>
+    </div>
+  </div>`;
+}
+
+// 「完了／途中まで」などを選んだのに、まだ「記録」を押していない項目の数（画面上の入力から数える）
+function countUnsavedProgress() {
+  let n = 0;
+  document.querySelectorAll('.progress-section .progress-num-input').forEach(inp => {
+    if (inp.value === '') return;
+    const init = inp.dataset.initialVal;
+    if (init === undefined || init === '' || parseInt(init, 10) !== parseInt(inp.value, 10)) n++;
+  });
+  return n;
+}
+
+// 未記録の入力があるとき、記録ボタンの文言と色を変えて「押し忘れ」を防ぐ
+function updateProgressDirty(container) {
+  let n = 0;
+  container.querySelectorAll('.progress-num-input').forEach(inp => {
+    if (inp.value === '') return;
+    const init = inp.dataset.initialVal;
+    if (init === undefined || init === '' || parseInt(init, 10) !== parseInt(inp.value, 10)) n++;
+  });
+  container.querySelectorAll('.progress-save-row .btn-primary').forEach(btn => {
+    if (btn.dataset.label === undefined) btn.dataset.label = btn.textContent.trim();
+    btn.classList.toggle('is-dirty', n > 0);
+    btn.textContent = n > 0 ? `📌 未記録の${n}件を記録してスケジュールを調整` : btn.dataset.label;
+  });
+}
+
+// 未記録のままページを閉じようとしたときの確認
+window.addEventListener('beforeunload', e => {
+  if (countUnsavedProgress() > 0) { e.preventDefault(); e.returnValue = ''; }
+});
