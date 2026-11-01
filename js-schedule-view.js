@@ -128,21 +128,11 @@ function reviewStatusIconHtml(r) {
 
 /**
  * 「やった日」入力欄のHTML（新規タスクの進捗入力用）。
- * 【変更】常時表示をやめ、1行の折りたたみ「📅 やった日：今日」にした。
- *   ・初期値は常に「今日」（何も触らなければ「今日やった分」として記録される）
- *   ・前日にやったが入力を忘れた場合だけ、開いて「昨日／予定日」を選ぶ
- *   ・今日以外が選ばれているときは、閉じたままでも日付が見えて色が変わる（気づかないまま過去日になるのを防ぐ）
- *   ・完了／途中まで を選ぶまでは、この欄自体を出さない（initDoneDateControls が切り替える）
+ * 入力日（今日）と実際にやった日が違うとき（前日にやったが入力を忘れた等）に、復習の起点がずれないようにする。
  * @param {string} defaultDate - 初期値（YYYY-MM-DD）
  * @param {string} plannedDate - 本来の予定日（なければ今日と同じ値）
  * @param {string} todayStr    - 今日（YYYY-MM-DD）
  */
-function formatDoneDateLabel(iso, todayStr) {
-  if (!iso || iso === todayStr) return '今日';
-  if (iso === formatISO(addDays(parseISO(todayStr), -1))) return '昨日';
-  const d = parseISO(iso);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
 function buildDoneDateRowHtml(defaultDate, plannedDate, todayStr) {
   const yesterday = formatISO(addDays(parseISO(todayStr), -1));
   const md = (iso) => { const d = parseISO(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -150,46 +140,31 @@ function buildDoneDateRowHtml(defaultDate, plannedDate, todayStr) {
   if (plannedDate && plannedDate < todayStr) chips.push({ date: plannedDate, label: `予定日 ${md(plannedDate)}` });
   if (!chips.some(c => c.date === yesterday)) chips.push({ date: yesterday, label: '昨日' });
   chips.push({ date: todayStr, label: '今日' });
+  const open = defaultDate !== todayStr; // 今日以外が初期値のときは最初から開いておく
   const chipsHtml = chips.map(c =>
     `<button type="button" class="prog-done-chip" data-date="${c.date}">${c.label}</button>`).join('');
-  const changed = defaultDate !== todayStr;
-  return `<div class="prog-done-date-wrap" style="display:none">
-    <details class="prog-done-fold${changed ? ' is-changed' : ''}">
-      <summary class="prog-done-summary">📅 やった日：<span class="prog-done-current">${formatDoneDateLabel(defaultDate, todayStr)}</span></summary>
-      <div class="prog-done-date-row">
-        <input type="date" class="prog-done-date" value="${defaultDate}" max="${todayStr}">
-        ${chipsHtml}
-      </div>
-    </details>
+  return `<div class="prog-done-date-wrap">
+    <button type="button" class="prog-done-date-toggle"${open ? ' style="display:none"' : ''}>📅 やった日を変更</button>
+    <div class="prog-done-date-row" style="display:${open ? 'flex' : 'none'}">
+      <span class="prog-done-date-label">📅 やった日</span>
+      <input type="date" class="prog-done-date" value="${defaultDate}" max="${todayStr}">
+      ${chipsHtml}
+    </div>
   </div>`;
 }
 
-// 「やった日」入力欄の動き（クイック選択・日付入力・表示の出し分け）を設定する
+// 「やった日」入力欄の動き（変更リンク・クイック選択ボタン・日付入力）を設定する
 function initDoneDateControls(container) {
   container.querySelectorAll('.prog-done-date-wrap').forEach(wrap => {
-    const input   = wrap.querySelector('.prog-done-date');
-    const fold    = wrap.querySelector('.prog-done-fold');
-    const current = wrap.querySelector('.prog-done-current');
-    const chips   = wrap.querySelectorAll('.prog-done-chip');
-    const item    = wrap.closest('.progress-item');
-    const numInp  = item?.querySelector('.progress-num-input');
-    const todayStr = input.max;
-    const sync = () => {
-      chips.forEach(c => c.classList.toggle('active', c.dataset.date === input.value));
-      current.textContent = formatDoneDateLabel(input.value, todayStr);
-      fold.classList.toggle('is-changed', !!input.value && input.value !== todayStr);
-    };
-    chips.forEach(c => c.addEventListener('click', () => { input.value = c.dataset.date; sync(); fold.open = false; }));
+    const input  = wrap.querySelector('.prog-done-date');
+    const row    = wrap.querySelector('.prog-done-date-row');
+    const toggle = wrap.querySelector('.prog-done-date-toggle');
+    const chips  = wrap.querySelectorAll('.prog-done-chip');
+    const sync = () => chips.forEach(c => c.classList.toggle('active', c.dataset.date === input.value));
+    toggle?.addEventListener('click', () => { row.style.display = 'flex'; toggle.style.display = 'none'; });
+    chips.forEach(c => c.addEventListener('click', () => { input.value = c.dataset.date; sync(); input.dispatchEvent(new Event('change', { bubbles: true })); }));
     input.addEventListener('change', sync);
-    // 「完了」「途中まで」を選んだ項目だけに表示（未入力・進んでいない場合は日付が意味を持たないため非表示）
-    const syncVisible = () => {
-      const v  = numInp ? parseInt(numInp.value, 10) : NaN;
-      const ps = numInp ? parseInt(numInp.dataset.plannedStart, 10) : NaN;
-      wrap.style.display = (!isNaN(v) && v >= ps) ? '' : 'none';
-    };
-    numInp?.addEventListener('input', syncVisible);
     sync();
-    syncVisible();
   });
 }
 
@@ -383,7 +358,7 @@ function renderMergedSchedule(containerId){
     html += `</tbody></table></div></details>`;
   }
   // （旧）下部の「範囲を追加していくと自動で延びます」は誤りだったため削除。上部の注意書きに統合。
-  html += `<div class="hint" style="margin-top:8px;">※過去日のスケジュールは非表示です。未達成の新規項目は「今日」に繰り上げられ、それに伴う復習日も自動で再計算されます。4日目以降は「残りのスケジュール」を開いて確認できます。復習の完了は、スケジュールタブの「復習タスク」で記録します。</div>`;
+  html += `<div class="hint" style="margin-top:8px;">※過去日のスケジュールは非表示です。未達成の新規項目は「今日」に繰り上げられ、それに伴う復習日も自動で再計算されます。4日目以降は「残りのスケジュール」を開いて確認できます。復習の完了は、スケジュールタブの「今日のタスク」で記録します。</div>`;
   area.innerHTML = html;
 }
 
@@ -941,7 +916,7 @@ function goToNextTaskSetup(type) {
  * @param {number} rangeEnd    - 計画終了番号/ページ
  * @param {string|number} recordedVal - 既存の記録値（空文字 = 未記録）
  * @param {string} type        - 'word' | 'book' | 'word-review' | 'book-review'
- * @param {string} statusHtml  - （廃止）互換のため引数だけ残す。ボタンの選択状態で記録済みが分かるため表示しない
+ * @param {string} statusHtml  - 既存記録バッジのHTML
  * @param {string} inputAttrs  - hidden input に付与する data-* 属性の文字列
  */
 function buildProgControlHtml(rangeStart, rangeEnd, recordedVal, type, statusHtml, inputAttrs) {
@@ -958,6 +933,10 @@ function buildProgControlHtml(rangeStart, rangeEnd, recordedVal, type, statusHtm
   const pct      = plannedCount > 0 ? Math.min(100, Math.round(completedCount / plannedCount * 100)) : 0;
   const displayVal = rv !== null ? rv : rangeEnd;
 
+  const step1LabelClass = isDone ? ' step-done'
+    : isPartial       ? ' step-partial'
+    : isNotProgressed ? ' step-not-progressed'
+    : '';
   const isReviewType = (type === 'word-review' || type === 'book-review');
   const extraPages   = rv !== null && rv > rangeEnd ? rv - rangeEnd : 0;
   const extraUnit    = isWordType ? '個追加' : 'ページ追加';
@@ -970,6 +949,7 @@ function buildProgControlHtml(rangeStart, rangeEnd, recordedVal, type, statusHtm
       <input type="number" class="progress-num-input" style="display:none"
              min="${rangeStart - 1}" max="${rangeEnd + 50}"
              value="${recordedVal}" ${inputAttrs}>
+      <div class="prog-step1-label${step1LabelClass}">完了しましたか？</div>
       <div class="prog-toggle">
         <button type="button" class="prog-btn prog-btn-done${isDone ? ' prog-btn-active' : ''}">
           ✅ 完了
@@ -981,10 +961,12 @@ function buildProgControlHtml(rangeStart, rangeEnd, recordedVal, type, statusHtm
           🚫 進んでいない
         </button>
       </div>
+      ${statusHtml ? `<div class="prog-status-wrap">${statusHtml}</div>` : ''}
       <div class="prog-partial-panel"${isPartial ? '' : ' style="display:none"'}>
+        <div class="prog-partial-heading">どこまで進みましたか？</div>
         <div class="prog-count-row">
           <span class="prog-count-val">${completedCount}</span>
-          <span class="prog-count-total">/ ${plannedCount}${unitWord}</span>
+          <span class="prog-count-total">/ ${plannedCount}${unitWord}完了</span>
           <div class="prog-bar-wrap"><div class="prog-bar-fill" style="width:${pct}%"></div></div>
         </div>
         <div class="prog-stepper">
@@ -1037,27 +1019,30 @@ function buildReviewProgressItems(reviews, type, unit, dividerLabel, dateStr, ex
     // 完了済みの復習は、別の日に記録されていても「完了」を初期表示にする
     const rv   = rec ? rec.actualEnd : (r.done ? r.rangeEnd : '');
     const pc   = r.rangeEnd - r.rangeStart + 1;
+    const isDoneNow = rv !== '' && rv >= r.rangeEnd;
+    const statusHtml = rv !== ''
+      ? `<span class="progress-status-badge ${isDoneNow ? 'ps-on-track' : 'ps-behind'}">
+           ${isDoneNow ? '✅ 完了' : `⚠️ ${rv - r.rangeStart + 1}/${pc}${unit}`}
+         </span>` : '';
     const badge = buildReviewBadgeHtml(r.interval, r.delayedDays);
     const bookName = type === 'word-review' ? (r.bookName || '単語') : r.bookName;
     const nameLabel = `${escapeHtml(bookName)} ${r.rangeStart}〜${r.rangeEnd}（${pc}${type === 'word-review' ? '個' : 'ページ'}）`;
     // data-initial-val：記録済みの値。保存時に「変更のない項目」を再保存しないための目印
     const dataAttrs = `data-review-key="${r.key}" data-type="${type}" data-planned-start="${r.rangeStart}" data-planned-end="${r.rangeEnd}" data-date="${dateStr}" data-book-name="${escapeHtml(bookName)}"${rv !== '' ? ` data-initial-val="${rv}"` : ''}`;
-    return `<div class="progress-item review-item t${tier}${r.done ? '' : ' prog-count-item'}">
+    return `<div class="progress-item review-item t${tier}">
       <span class="progress-plan-label">${badge} ${nameLabel}</span>
-      ${buildProgControlHtml(r.rangeStart, r.rangeEnd, rv, type, '', dataAttrs)}
+      ${buildProgControlHtml(r.rangeStart, r.rangeEnd, rv, type, statusHtml, dataAttrs)}
     </div>`;
   };
 
   let html = '';
   if (pending.length) {
-    // 見出し（単語／参考書）は、両方の復習があるときだけ出す（呼び出し側が空文字を渡せば省略）
-    if (dividerLabel) html += `<div class="progress-review-divider">${dividerLabel}</div>`;
-    html += pending.map(itemHtml).join('');
+    html += `<div class="progress-review-divider">${dividerLabel}</div>` + pending.map(itemHtml).join('');
   }
   if (done.length) {
     const kind = type === 'word-review' ? '単語' : '参考書';
     html += `<details class="progress-done-details">
-      <summary>✅ ${kind}の完了済み（${done.length}件）</summary>
+      <summary>✅ ${kind}の完了済み復習（${done.length}件）／修正はここから</summary>
       ${done.map(itemHtml).join('')}
     </details>`;
   }
@@ -1101,20 +1086,30 @@ function buildNewChunkProgressItemHtml(chunk, cfg, existingRecords, dateStr) {
     ? (chunk.carriedForward ? buildCarryBadgeHtml(chunk.originalDate) : (chunk.isCarriedNew ? buildCarryBadgeHtml(chunk.originalDate || null) : ''))
     : '';
 
-  // ★実施日（やった日）：初期値は「今日」。記録済みならその記録の実施日。
-  //   【変更】以前は、前日以前の予定が繰り越されてきた分の初期値を「予定日」にしていたが、
-  //   やっていない場合に復習の起点が過去日になってしまうため、常に今日を初期値にした。
-  //   （前日にやって入力を忘れた分は、「やった日」を開いて「昨日／予定日」を選ぶ）
+  const statusHtml = rec
+    ? `<span class="progress-status-badge ${rec.actualEnd >= planEnd ? 'ps-on-track' : 'ps-behind'}">
+         ${rec.actualEnd >= planEnd ? '✅ 完了' : `⚠️ ${rec.actualEnd - chunk.rangeStart + 1}/${plannedCount}${cfg.unit}完了`}
+       </span>`
+    : '';
+
+  // ★実施日（やった日）：本来の予定日と、初期値を決める
+  //   ・記録済み → その記録の実施日（なければ入力日）
+  //   ・前日以前の予定が繰り越されてきた分 → 予定日（「やったのに入力を忘れた」を救うため）
+  //     ただし「途中まで」の残りの繰越は、予定日にやったとは限らないので今日にする
+  //   ・それ以外 → 今日
   const slotMatch = typeof chunkEntryId === 'string' ? chunkEntryId.match(CHUNK_KEY_DATE_RE) : null;
   const plannedDate = (!chunk.fromPartial && slotMatch) ? slotMatch[1] : dateStr;
-  const defaultDoneDate = rec ? (rec.doneDate || rec.date) : dateStr;
+  //   ・予定日に「進んでいない」と記録した分は、やっていないことが分かっているので今日にする
+  const wasRecordedNone = dailyProgress.some(p => p.type === cfg.type && p.notProgressed && p.entryId === chunkEntryId);
+  const isCarriedOld = !rec && !!chunk.carriedForward && !chunk.isFromProgress && !chunk.fromPartial && !wasRecordedNone && plannedDate < dateStr;
+  const defaultDoneDate = rec ? (rec.doneDate || rec.date) : (isCarriedOld ? plannedDate : dateStr);
 
   const dataAttrs = `data-entry-id="${chunkEntryId}" data-${cfg.ownerAttrName}="${ownerId}" data-type="${cfg.type}" data-planned-start="${chunk.rangeStart}" data-planned-end="${planEnd}" data-date="${dateStr}" data-book-name="${escapeHtml(bookName)}"${rec ? ` data-initial-val="${rec.actualEnd}" data-initial-done-date="${defaultDoneDate}"` : ''}`;
 
   return `
-      <div class="progress-item prog-count-item">
-        <span class="progress-plan-label">${escapeHtml(bookName)} ${chunk.rangeStart}〜${planEnd}（${plannedCount}${cfg.unit}）${cfNote}</span>
-        ${buildProgControlHtml(chunk.rangeStart, planEnd, recordedVal, cfg.type, '', dataAttrs)}
+      <div class="progress-item">
+        <span class="progress-plan-label">${escapeHtml(bookName)} ${chunk.rangeStart}〜${planEnd}（予定 ${plannedCount}${cfg.unit}）${cfNote}</span>
+        ${buildProgControlHtml(chunk.rangeStart, planEnd, recordedVal, cfg.type, statusHtml, dataAttrs)}
         ${buildDoneDateRowHtml(defaultDoneDate, plannedDate, dateStr)}
       </div>`;
 }
@@ -1162,24 +1157,11 @@ function buildProgressInputSection(dateStr, dayWords, dayBooks, baseId, dayWordR
   });
 
   // ── 復習：単語・参考書（共通ヘルパーで処理） ────────────────
-  // 単語と参考書の両方に復習があるときだけ、小見出し（単語／参考書）を付ける
-  const bothKinds = dayWordReviews.length > 0 && dayBookReviews.length > 0;
-  let reviewItemsHtml = '';
-  reviewItemsHtml += buildReviewProgressItems(dayWordReviews, 'word-review', '個',   bothKinds ? '📖 単語'   : '', dateStr, existingRecords);
-  reviewItemsHtml += buildReviewProgressItems(dayBookReviews, 'book-review', 'ページ', bothKinds ? '📚 参考書' : '', dateStr, existingRecords);
+  itemsHtml += buildReviewProgressItems(dayWordReviews, 'word-review', '個',   '🔁 復習タスク（単語）',   dateStr, existingRecords);
+  itemsHtml += buildReviewProgressItems(dayBookReviews, 'book-review', 'ページ', '📚 復習タスク（参考書）', dateStr, existingRecords);
 
   // 新規・復習ともにタスクがなければ null を返す
-  if (!itemsHtml && !reviewItemsHtml) return null;
-
-  const newCount    = dayWords.length + dayBooks.length;
-  const reviewCount = dayWordReviews.filter(r => !r.done).length + dayBookReviews.filter(r => !r.done).length;
-
-  // 「今日のタスク」「復習タスク」をそれぞれ折りたたみにする。
-  // 件数と「未入力 N件」は updateFoldSummaries() が入力に合わせて更新する。
-  const newFold    = itemsHtml
-    ? buildProgressFoldHtml('new', '📝 今日のタスク', newCount, itemsHtml, baseId) : '';
-  const reviewFold = reviewItemsHtml
-    ? buildProgressFoldHtml('review', '🔁 復習タスク', reviewCount, reviewItemsHtml, baseId) : '';
+  if (!itemsHtml) return null;
 
   const savedLabel = hasAnyRecord
     ? `<span class="progress-recorded-badge">✓ 記録済み</span>`
@@ -1187,8 +1169,11 @@ function buildProgressInputSection(dateStr, dayWords, dayBooks, baseId, dayWordR
 
   return `
     <div class="progress-section" id="progress-section-${baseId}">
-      ${newFold}
-      ${reviewFold}
+      <div class="progress-section-title">
+        📝 今日のタスク（「✅ 完了」は押すだけで自動記録）
+        ${savedLabel}
+      </div>
+      ${itemsHtml}
       <div class="ahead-banner" id="ahead-banner-${baseId}" style="display:none;">
         <span class="ahead-text" id="ahead-text-${baseId}"></span>
         <button class="btn-primary" style="font-size:.8rem; padding:7px 12px;"
@@ -1201,84 +1186,66 @@ function buildProgressInputSection(dateStr, dayWords, dayBooks, baseId, dayWordR
       <div class="progress-save-row">
         <button class="btn-primary" style="font-size:.85rem;"
                 onclick="handleProgressSave('${dateStr}', '${baseId}')">
-          📌 進捗を記録
+          📌 進捗を記録してスケジュールを調整
         </button>
-        ${savedLabel}
+        <button class="btn-ghost" style="font-size:.8rem;"
+                onclick="markAllProgressDone('${baseId}')">
+          ✅ 未入力をすべて完了に
+        </button>
         ${hasAnyRecord ? `<button class="btn-ghost" style="font-size:.8rem;"
-                onclick="handleProgressClear('${dateStr}')">リセット</button>` : ''}
+                onclick="handleProgressClear('${dateStr}')">記録をリセット</button>` : ''}
       </div>
     </div>`;
-}
-
-/* 折りたたみ（「今日のタスク」「復習タスク」）の開閉状態。再描画しても保つ。
-   初期状態：今日のタスクは開く／復習タスクは閉じる（閉じていても未入力の件数は見出しに出る） */
-const progressFoldOpen = { new: true, review: false };
-
-/**
- * 折りたたみ1つ分のHTML。
- * @param {'new'|'review'} key
- * @param {string} title   - 見出し（例：📝 今日のタスク）
- * @param {number} count   - 入力が必要な件数
- * @param {string} bodyHtml
- * @param {string} baseId
- */
-function buildProgressFoldHtml(key, title, count, bodyHtml, baseId) {
-  // 2件以上あるときだけ「未入力をすべて完了に」を出す（1件ならボタンを直接タップすれば足りる）
-  const tools = count >= 2
-    ? `<div class="prog-fold-tools"><button type="button" class="btn-ghost prog-markall-btn"
-         onclick="markAllProgressDone('${baseId}', '${key}')">✅ 未入力をすべて完了に</button></div>`
-    : '';
-  return `<details class="prog-fold prog-fold-${key}" data-fold="${key}"${progressFoldOpen[key] ? ' open' : ''}>
-    <summary class="prog-fold-summary">
-      <span class="prog-fold-title">${title}${count ? `<span class="prog-fold-num">${count}</span>` : ''}</span>
-      <span class="prog-fold-count"></span>
-    </summary>
-    <div class="prog-fold-body">${tools}${bodyHtml}</div>
-  </details>`;
-}
-
-/**
- * 各折りたたみの見出し右側に「未入力 N件」／「✓ 入力済み」を表示する。
- * 閉じていても、入力が残っているかどうかが分かるようにするためのもの。
- */
-function updateFoldSummaries(container) {
-  container.querySelectorAll('.prog-fold').forEach(fold => {
-    const label = fold.querySelector('.prog-fold-count');
-    if (!label) return;
-    const items = fold.querySelectorAll('.prog-count-item');
-    if (items.length === 0) {
-      const doneN = fold.querySelectorAll('.progress-done-details .progress-item').length;
-      label.textContent = doneN ? `✅ 完了済み ${doneN}件` : '';
-      label.className = 'prog-fold-count is-complete';
-      return;
-    }
-    let empty = 0;
-    items.forEach(it => {
-      const inp = it.querySelector('.progress-num-input');
-      if (inp && inp.value === '') empty++;
-    });
-    label.textContent = empty > 0 ? `未入力 ${empty}件` : '✓ 入力済み';
-    label.className = 'prog-fold-count ' + (empty > 0 ? 'is-pending' : 'is-complete');
-  });
 }
 
 /**
  * 【追加】まだ何も選んでいない項目だけを、まとめて「完了」にする（モバイルでのタップ数削減用）。
  * すでに「完了／途中まで／進んでいない」を選んだ項目・記録済みの項目は変更しない。
- * 「完了」にするだけで、保存は「📌 進捗を記録」ボタンで行う。
- * 【変更】折りたたみごとのボタンになったため、押した折りたたみ（foldKey）の中だけが対象。
- *   （閉じている「復習タスク」を、知らないうちに完了にしてしまわないため）
+ * 「完了」にするだけで、保存は「📌 進捗を記録…」ボタンで行う。
  */
-function markAllProgressDone(baseId, foldKey) {
+function markAllProgressDone(baseId) {
   const section = document.getElementById(`progress-section-${baseId}`);
   if (!section) return;
-  const scope = foldKey ? section.querySelector(`.prog-fold[data-fold="${foldKey}"]`) : section;
-  if (!scope) return;
-  scope.querySelectorAll('.prog-control-ui').forEach(ui => {
-    const hidden = ui.querySelector('.progress-num-input');
-    const doneBtn = ui.querySelector('.prog-btn-done');
-    if (hidden && doneBtn && hidden.value === '') doneBtn.click();
+  // 一括操作中は、1件ごとの自動記録を止める（保存は「📌 進捗を記録」ボタンでまとめて行う）
+  _suppressAutoSave = true;
+  try {
+    section.querySelectorAll('.prog-control-ui').forEach(ui => {
+      const hidden = ui.querySelector('.progress-num-input');
+      const doneBtn = ui.querySelector('.prog-btn-done');
+      if (hidden && doneBtn && hidden.value === '') doneBtn.click();
+    });
+  } finally {
+    _suppressAutoSave = false;
+  }
+}
+
+/**
+ * 【追加】「✅ 完了」を押した項目を、その場で自動記録する（記録ボタンを押す手間をなくす）。
+ *  ・記録後5秒間は、トーストの「元に戻す」で取り消せる（handleProgressSave が表示）
+ *  ・「途中まで」「進んでいない」は値の確認が要るため、従来どおり記録ボタンで保存する
+ *  ・ほかに未記録の入力（途中まで入力中など）があるときは自動記録せず、記録ボタンにまとめる
+ *    （再描画で、入力途中の内容を消さないため）
+ */
+let _suppressAutoSave = false;
+function isProgressInputDirty(inp) {
+  if (inp.value === '') return false;
+  const init = inp.dataset.initialVal;
+  if (init === undefined || init === '' || parseInt(init, 10) !== parseInt(inp.value, 10)) return true;
+  // 値は同じでも「やった日」を変えていれば未記録の変更とみなす
+  const dd = inp.closest('.progress-item')?.querySelector('.prog-done-date');
+  const initDd = inp.dataset.initialDoneDate;
+  return !!(dd && initDd !== undefined && dd.value && dd.value !== initDd);
+}
+function autoSaveProgressItem(hiddenInput, dateStr, baseId) {
+  if (_suppressAutoSave) return;
+  const section = document.getElementById(`progress-section-${baseId}`);
+  if (!section) return;
+  let others = 0;
+  section.querySelectorAll('.progress-num-input').forEach(inp => {
+    if (inp !== hiddenInput && isProgressInputDirty(inp)) others++;
   });
+  if (others > 0) return;
+  handleProgressSave(dateStr, baseId);
 }
 
 /**
@@ -1299,6 +1266,7 @@ function initProgressControls(container, dateStr, baseId) {
     const progDisplayInput = ui.querySelector('.prog-display-input');
     const barFill        = ui.querySelector('.prog-bar-fill');
     const countValEl     = ui.querySelector('.prog-count-val');
+    const step1Label     = ui.querySelector('.prog-step1-label');
     const extraPanel     = ui.querySelector('.prog-extra-panel');
     const extraLink      = ui.querySelector('.prog-extra-open-link'); // 余剰パネルを開く小さなリンク
 
@@ -1321,6 +1289,14 @@ function initProgressControls(container, dateStr, baseId) {
       hiddenInput.dispatchEvent(new Event('input'));
     }
 
+    /* ── ①ラベルの色をステップ状態に合わせて更新 ── */
+    function updateStep1Label(mode) {
+      if (!step1Label) return;
+      step1Label.classList.toggle('step-done',          mode === 'done');
+      step1Label.classList.toggle('step-partial',       mode === 'partial');
+      step1Label.classList.toggle('step-not-progressed', mode === 'not-progressed'); // ★追加
+    }
+
     /* ── ボタンのアクティブ状態を切り替える ── */
     function setActiveState(mode) {
       if (btnDone)           btnDone.classList.toggle('prog-btn-active',           mode === 'done');
@@ -1332,6 +1308,7 @@ function initProgressControls(container, dateStr, baseId) {
       // 「途中まで」「進んでいない」どちらに切り替えても余剰パネルは閉じる
       if (extraPanel && mode !== 'done') extraPanel.style.display = 'none';
       if (extraLink  && mode !== 'done') extraLink.style.display  = 'none';
+      updateStep1Label(mode);
     }
 
     /* ── 「✅ 完了」 ── */
@@ -1347,6 +1324,8 @@ function initProgressControls(container, dateStr, baseId) {
           extraPanel.style.display = 'none';
         }
         if (extraLink) extraLink.style.display = 'inline-block';
+        // 【追加】押した時点で自動記録（再描画されるため、必ず最後に呼ぶ）
+        autoSaveProgressItem(hiddenInput, dateStr, baseId);
       });
     }
 
@@ -1393,6 +1372,7 @@ function initProgressControls(container, dateStr, baseId) {
           hiddenInput.dispatchEvent(new Event('input')); // previewProgressAdjustment を起動
           extraPanel.style.display = 'none';
           if (extraLink) extraLink.style.display = 'inline-block';
+          autoSaveProgressItem(hiddenInput, dateStr, baseId); // 【追加】「✅ 記録」を押した時点で自動記録
         });
       }
     }
@@ -1480,17 +1460,15 @@ function attachProgressInputHandlers(container, dateStr, baseId) {
     input.addEventListener('input', () => {
       previewProgressAdjustment(container, dateStr, baseId);
       updateProgressDirty(container); // 【追加】未記録の入力があるとき、記録ボタンで知らせる
-      updateFoldSummaries(container); // 折りたたみ見出しの「未入力 N件」を更新
     });
   });
-  // 折りたたみの開閉を覚えておく（記録後の再描画でも、開いていたものは開いたままにする）
-  container.querySelectorAll('.prog-fold').forEach(fold => {
-    fold.addEventListener('toggle', () => { progressFoldOpen[fold.dataset.fold] = fold.open; });
-  });
-  updateFoldSummaries(container);
   // 新UIのインタラクションもここで初期化
   initProgressControls(container, dateStr, baseId);
   initDoneDateControls(container); // 「やった日」入力欄
+  // 【追加】「やった日」だけ変えた場合も、記録ボタンで未記録を知らせる
+  container.querySelectorAll('.prog-done-date').forEach(d => {
+    d.addEventListener('change', () => updateProgressDirty(container));
+  });
 }
 
 /**
@@ -1969,9 +1947,7 @@ function buildOnboardingHtml() {
 function countUnsavedProgress() {
   let n = 0;
   document.querySelectorAll('.progress-section .progress-num-input').forEach(inp => {
-    if (inp.value === '') return;
-    const init = inp.dataset.initialVal;
-    if (init === undefined || init === '' || parseInt(init, 10) !== parseInt(inp.value, 10)) n++;
+    if (isProgressInputDirty(inp)) n++;
   });
   return n;
 }
@@ -1980,14 +1956,12 @@ function countUnsavedProgress() {
 function updateProgressDirty(container) {
   let n = 0;
   container.querySelectorAll('.progress-num-input').forEach(inp => {
-    if (inp.value === '') return;
-    const init = inp.dataset.initialVal;
-    if (init === undefined || init === '' || parseInt(init, 10) !== parseInt(inp.value, 10)) n++;
+    if (isProgressInputDirty(inp)) n++;
   });
   container.querySelectorAll('.progress-save-row .btn-primary').forEach(btn => {
     if (btn.dataset.label === undefined) btn.dataset.label = btn.textContent.trim();
     btn.classList.toggle('is-dirty', n > 0);
-    btn.textContent = n > 0 ? `📌 未記録${n}件を記録` : btn.dataset.label;
+    btn.textContent = n > 0 ? `📌 未記録の${n}件を記録してスケジュールを調整` : btn.dataset.label;
   });
 }
 
