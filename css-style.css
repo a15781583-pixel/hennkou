@@ -670,7 +670,7 @@
       gap: 3px;
       padding: 6px 2px;
       cursor: pointer;
-      font-size: .6rem;
+      font-size: .66rem; /* 【改善】小さすぎて読みにくかった .6rem から拡大 */
       font-weight: 600;
       color: var(--ink-soft);
       border: none;
@@ -1533,3 +1533,107 @@
 /* 完了済みの復習（折りたたみ） */
 .progress-done-details{ margin-top:10px; border-top:1px dashed var(--paper-line); padding-top:6px; }
 .progress-done-details > summary{ cursor:pointer; font-size:.78rem; font-weight:700; color:var(--ink-soft); padding:4px 0; }
+
+/* =========================================================
+   【追加】UI改善（入力の手間削減・継続利用のための部品）
+========================================================= */
+
+/* ---------- トースト通知（alert の代わり） ---------- */
+.toast-host{
+  position:fixed; left:50%; transform:translateX(-50%); bottom:24px; z-index:2000;
+  display:flex; flex-direction:column; gap:8px; align-items:center;
+  width:min(92vw, 460px); pointer-events:none;
+}
+.toast{
+  pointer-events:auto; width:100%; box-sizing:border-box;
+  display:flex; gap:12px; align-items:center; justify-content:space-between;
+  background:var(--ink); color:var(--white); border-radius:10px; padding:11px 14px;
+  font-size:.85rem; line-height:1.5; box-shadow:0 6px 20px rgba(0,0,0,.25);
+  animation:toast-in .2s ease-out;
+}
+.toast-action{
+  background:transparent; border:1px solid rgba(255,255,255,.65); color:var(--white);
+  border-radius:6px; padding:6px 12px; font-size:.8rem; font-weight:700; cursor:pointer;
+  white-space:nowrap; min-height:36px; font-family:inherit;
+}
+@keyframes toast-in{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+@media (max-width:640px){
+  .toast-host{ bottom:calc(76px + env(safe-area-inset-bottom, 0px)); } /* ボトムナビの上に出す */
+}
+@media print{ .toast-host{ display:none; } }
+
+/* ---------- 入力エラーの欄ハイライト ---------- */
+.field-invalid{
+  border-color:var(--danger) !important;
+  box-shadow:0 0 0 3px rgba(178,58,46,.15);
+}
+.checkbox-row.field-invalid{
+  outline:2px solid var(--danger); outline-offset:4px; border-radius:8px;
+}
+
+/* ---------- 割り振り方法ラジオの補足文字 ---------- */
+.radio-sub{ color:var(--ink-soft); font-size:.74rem; margin-left:2px; }
+
+/* ---------- 折りたたみ（復習のタイミング／凡例／月目標） ---------- */
+details.fold-mini{
+  border:1px dashed var(--paper-line); border-radius:8px; padding:8px 12px; background:var(--white);
+}
+details.fold-mini > summary{
+  cursor:pointer; font-size:.85rem; font-weight:600; color:var(--ink);
+  display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; min-height:32px;
+}
+details.fold-mini[open] > summary{ margin-bottom:8px; }
+.fold-summary-val{ color:var(--gold); font-weight:700; font-size:.8rem; }
+.fold-summary-hint{ color:var(--ink-soft); font-weight:400; font-size:.74rem; }
+
+details.review-legend-fold{ margin-bottom:6px; }
+details.review-legend-fold > summary{
+  cursor:pointer; font-size:.78rem; color:var(--ink-soft); padding:4px 2px; min-height:28px;
+}
+details.review-legend-fold[open] > summary{ margin-bottom:6px; }
+
+details.mg-fold{ margin-bottom:12px; }
+details.mg-fold > summary{
+  cursor:pointer; font-size:.9rem; font-weight:700; color:var(--ink);
+  background:var(--white); border:1px solid var(--paper-line); border-radius:var(--radius);
+  padding:10px 14px; min-height:44px; display:flex; align-items:center; flex-wrap:wrap; gap:2px;
+}
+details.mg-fold[open] > summary{ border-bottom-left-radius:0; border-bottom-right-radius:0; }
+.mg-fold-text{ font-weight:500; color:var(--ink-soft); font-size:.82rem; margin-left:2px; }
+details.mg-fold > .month-goal-card{ margin-top:0; border-top-left-radius:0; border-top-right-radius:0; }
+
+/* ---------- 記録ボタン：未記録の入力があるとき ---------- */
+.btn-primary.is-dirty{
+  background:var(--gold); color:var(--white);
+  animation:dirty-pulse 1.8s ease-in-out infinite;
+}
+.btn-primary.is-dirty:hover{ background:#8d6717; }
+@keyframes dirty-pulse{
+  0%,100%{ box-shadow:0 0 0 0 rgba(169,124,31,.5); }
+  50%{ box-shadow:0 0 0 7px rgba(169,124,31,0); }
+}
+@media (prefers-reduced-motion: reduce){
+  .btn-primary.is-dirty, .toast{ animation:none; }
+}
+
+/* ---------- 初回案内（何も登録されていないとき） ---------- */
+.onboarding-card{
+  background:var(--white); border:1px solid var(--paper-line); border-left:4px solid var(--gold);
+  border-radius:var(--radius); padding:18px 18px 16px;
+}
+.onboarding-card .ob-title{ font-weight:700; color:var(--ink); font-size:1rem; margin-bottom:8px; }
+.onboarding-card .ob-steps{ margin:0 0 14px 1.2em; padding:0; color:var(--ink-soft); font-size:.88rem; line-height:1.8; }
+.onboarding-card .ob-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+.onboarding-card .ob-actions button{ min-height:44px; flex:1; min-width:150px; }
+
+/* ---------- バックアップ ---------- */
+.backup-nudge{
+  display:flex; gap:10px 14px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  background:var(--gold-bg); border:1px solid var(--gold); color:var(--ink);
+  border-radius:var(--radius); padding:10px 14px; margin-bottom:12px; font-size:.84rem; line-height:1.55;
+}
+.backup-nudge .btn-primary{ min-height:40px; }
+.backup-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+.backup-actions .btn-primary, .backup-actions .backup-import-label{
+  min-height:44px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-sizing:border-box;
+}
