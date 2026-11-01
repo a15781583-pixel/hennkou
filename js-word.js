@@ -52,6 +52,49 @@ function renderEntryList(){
       renderAll();
     },
   });
+  updateNextRangeBtn(); // 【追加】登録の有無・編集中かどうかに合わせて「前回の続き」ボタンを出し分ける
+}
+
+/* ───────── 【追加】「前回の続きを入力」ボタン ───────── */
+// 毎週の範囲登録で、教材名・曜日・復習間隔・番号の幅・期間の長さを前回から引き継ぐ。
+// 番号は前回の終了番号の次から同じ幅、日付は前回の終了日の翌日（過去なら今日）から同じ長さ。
+function updateNextRangeBtn(){
+  const btn = document.getElementById('nextRangeBtn');
+  if (!btn) return;
+  const last = entries[entries.length - 1];
+  btn.style.display = (last && !editingEntryId) ? '' : 'none';
+  if (last) btn.textContent = `↪ 「${last.bookName || '単語'}」の続きを入力`;
+}
+
+function prefillNextWordRange(){
+  if (editingEntryId) return; // 編集中は上書きしない
+  const last = entries[entries.length - 1];
+  if (!last) { showToast('まだ登録された範囲がありません。'); return; }
+  const width = Math.max(1, last.endNum - last.startNum + 1);
+  const mode = last.planMode || 'byRange';
+  const today = parseISO(todayISO());
+  let startD = today, spanDays = 6;
+  if (mode === 'byRange' && last.endDate) {
+    const lastEnd = parseISO(last.endDate);
+    spanDays = Math.max(0, Math.round((lastEnd - parseISO(last.startDate)) / 86400000));
+    const next = addDays(lastEnd, 1);
+    startD = next > today ? next : today;
+  }
+  clearFieldErrors();
+  const errorEl = document.getElementById('errorMsg');
+  if (errorEl) errorEl.textContent = '';
+  wordFormController.setFormState({
+    planMode: mode,
+    bookName: last.bookName || '',
+    startNum: last.endNum + 1,
+    endNum: last.endNum + width,
+    startDate: formatISO(startD),
+    endDate: formatISO(addDays(startD, spanDays)),
+    amountPerDay: last.amountPerDay ?? '',
+    weekdays: last.weekdays || DEFAULT_WEEKDAYS,
+    intervals: last.intervals || DEFAULT_INTERVALS,
+  });
+  showToast(`前回の続き（${last.endNum + 1}〜${last.endNum + width}）を入力しました。内容を確認して追加してください。`);
 }
 
 /* ───────── 単語スケジュールの編集モード ───────── */
@@ -105,21 +148,23 @@ function buildAndValidateWordEntry(showError){
   const amountPerDay = Number(document.getElementById('amountPerDay').value);
 
   // 【修正】小数（例: 1.5）や 0・負数を弾く。小数が通ると範囲・復習キーが小数になり計算が崩れる
+  // 【改善】エラーのある欄を赤枠にして、そこへ移動する（flagInvalid）
   if(!Number.isInteger(startNum) || !Number.isInteger(endNum) || startNum < 1 || endNum < startNum){
-    showError('開始番号・終了番号を正しく入力してください（1以上の整数で、終了番号は開始番号以上）。'); return null;
+    showError('開始番号・終了番号を正しく入力してください（1以上の整数で、終了番号は開始番号以上）。');
+    flagInvalid(['startNum', 'endNum']); return null;
   }
-  if(!startDate){ showError('開始日を選択してください。'); return null; }
+  if(!startDate){ showError('開始日を選択してください。'); flagInvalid(['startDate']); return null; }
 
   // 終了日のバリデーションを追加
   if(planMode === 'byRange') {
-    if(!endDate){ showError('終了日を選択してください。'); return null; }
-    if(new Date(endDate) < new Date(startDate)){ showError('終了日は開始日以降の日付にしてください。'); return null; }
+    if(!endDate){ showError('終了日を選択してください。'); flagInvalid(['endDate']); return null; }
+    if(new Date(endDate) < new Date(startDate)){ showError('終了日は開始日以降の日付にしてください。'); flagInvalid(['endDate']); return null; }
   }
 
-  if(weekdays.length === 0){ showError('学習する曜日を1つ以上選んでください。'); return null; }
-  if(intervals.length === 0){ showError('復習のタイミングを1つ以上選んでください。'); return null; }
+  if(weekdays.length === 0){ showError('学習する曜日を1つ以上選んでください。'); flagInvalid(['weekdayRow']); return null; }
+  if(intervals.length === 0){ showError('復習のタイミングを1つ以上選んでください。'); flagInvalid(['intervalRow']); return null; }
   if(planMode === 'byAmount' && (!Number.isInteger(amountPerDay) || amountPerDay <= 0)){
-    showError('1日あたりの単語数を正しく入力してください。'); return null;
+    showError('1日あたりの単語数を正しく入力してください。'); flagInvalid(['amountPerDay']); return null;
   }
 
   const newFields = { bookName, startNum, endNum, startDate, endDate, weekdays, intervals, planMode, amountPerDay };
@@ -129,6 +174,7 @@ function buildAndValidateWordEntry(showError){
   // この検証がないと、登録一覧には出るのにスケジュールには1件も出ない状態になってしまう。
   if (computeChunksForEntry(newFields).length === 0) {
     showError('指定した期間・曜日では学習日がありません。開始日〜終了日の間に、選んだ学習曜日が含まれるよう設定を見直してください。');
+    flagInvalid(planMode === 'byRange' ? ['weekdayRow', 'startDate', 'endDate'] : ['weekdayRow']);
     return null;
   }
 
