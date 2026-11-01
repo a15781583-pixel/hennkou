@@ -107,6 +107,16 @@ function showTab(tabName) {
     renderLeech();
   });
 
+  // ---- 日付が変わったら画面を最新の日付で描き直す ----
+  // タブを開いたままの端末（スマホ等）で日付をまたぐと、古い日付のまま進捗が入力・保存されてしまうため。
+  // （タブに戻ったとき・画面に焦点が戻ったとき・1分ごとに、日付が変わっていないか確認する）
+  await safe('日付変更の監視', () => {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfDateChanged(); });
+    window.addEventListener('focus', refreshIfDateChanged);
+    window.addEventListener('pageshow', refreshIfDateChanged);
+    setInterval(() => { if (!document.hidden) refreshIfDateChanged(); }, 60000);
+  });
+
   // ---- 成績・弱点分析タブの初期化 ----
   await safe('成績・弱点分析タブの初期化', async () => {
     const scoreDateEl = document.getElementById('scoreDate');
