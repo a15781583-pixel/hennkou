@@ -130,18 +130,9 @@ function buildIntervalChips(rowId = 'intervalRow', defaultIntervals = DEFAULT_IN
     chip.className = 'chip' + (checked ? ' checked' : '');
     chip.innerHTML = `<input type="checkbox" value="${n}" ${checked?'checked':''}> ${n}日後`;
     const cb = chip.querySelector('input');
-    cb.addEventListener('change', () => { chip.classList.toggle('checked', cb.checked); updateIntervalSummary(rowId); });
+    cb.addEventListener('change', () => chip.classList.toggle('checked', cb.checked));
     row.appendChild(chip);
   });
-  updateIntervalSummary(rowId);
-}
-
-// 【追加】折りたたんだ「復習のタイミング」の見出しに、選択中の間隔を表示する（閉じていても内容が分かる）
-function updateIntervalSummary(rowId){
-  const el = document.getElementById(rowId + 'Summary');
-  if (!el) return;
-  const v = getCheckedValues(rowId).sort((a, b) => a - b);
-  el.textContent = v.length ? `選択中：${v.join('・')}日後` : '未選択';
 }
 
 function getCheckedValues(rowId){
@@ -157,7 +148,6 @@ function setCheckedValues(rowId, values = []) {
     cb.checked = isChecked;
     cb.closest('.chip')?.classList.toggle('checked', isChecked);
   });
-  updateIntervalSummary(rowId);
 }
 
 /* ───────── 登録済みエントリ一覧の共通描画（単語/参考書共通） ───────── */
@@ -331,7 +321,6 @@ function createFormController(cfg){
  * 共通の流れを1本化し、型固有の差分は cfg のフィールド・フック関数に委譲する。
  */
 async function handleSaveEntry(cfg){
-  clearFieldErrors(); // 【追加】前回の入力欄ハイライトを消す
   const errorEl = document.getElementById(cfg.errorElId);
   if (errorEl) errorEl.textContent = '';
   const showError = (msg) => { if (errorEl) errorEl.textContent = msg; else alert(msg); };
@@ -371,146 +360,4 @@ function escapeHtml(str){
   return String(str == null ? '' : str).replace(/[&<>"']/g, ch => ({
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
   }[ch]));
-}
-
-/* =========================================================
-   【追加】UI改善用の共通部品
-   ・showToast        … alert の代わりに出す、流れを止めない通知（「元に戻す」付きにもできる）
-   ・flagInvalid      … 入力エラーのある欄を赤枠にして、そこへ移動する
-   ・bindAutoEndDate  … 開始日を選ぶと終了日を自動で「開始日＋6日」にする
-   ・バックアップ     … 全データのJSON書き出し／読み込み（端末変更・データ消失への備え）
-========================================================= */
-
-/* ───────── トースト通知 ───────── */
-function showToast(msg, actionLabel, onAction, ms = 5000){
-  let host = document.getElementById('toastHost');
-  if (!host) {
-    host = document.createElement('div');
-    host.id = 'toastHost';
-    host.className = 'toast-host no-print';
-    host.setAttribute('role', 'status');
-    host.setAttribute('aria-live', 'polite');
-    document.body.appendChild(host);
-  }
-  const el = document.createElement('div');
-  el.className = 'toast';
-  const span = document.createElement('span');
-  span.textContent = msg;
-  el.appendChild(span);
-  const close = () => el.remove();
-  if (onAction) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'toast-action';
-    b.textContent = actionLabel || '元に戻す';
-    b.addEventListener('click', () => { try { onAction(); } finally { close(); } });
-    el.appendChild(b);
-  }
-  host.appendChild(el);
-  while (host.children.length > 3) host.firstChild.remove();
-  setTimeout(close, ms);
-}
-
-/* ───────── 入力エラーの欄ハイライト ───────── */
-function clearFieldErrors(){
-  document.querySelectorAll('.field-invalid').forEach(el => el.classList.remove('field-invalid'));
-}
-// ids: エラーのある input（または曜日・復習チップの行）の id の配列。最初の1つへスクロールして focus する。
-function flagInvalid(ids){
-  let first = null;
-  ids.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.add('field-invalid');
-    if (!first) first = el;
-  });
-  if (!first) return;
-  // 折りたたみ（復習のタイミング等）の中にある欄なら開いて見えるようにする
-  let d = first.closest('details');
-  while (d) { d.open = true; d = d.parentElement ? d.parentElement.closest('details') : null; }
-  first.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  const focusable = first.matches('input,select,textarea') ? first : first.querySelector('input');
-  if (focusable) focusable.focus({ preventScroll: true });
-}
-document.addEventListener('input',  e => e.target.classList && e.target.classList.remove('field-invalid'));
-document.addEventListener('change', e => { const r = e.target.closest && e.target.closest('.checkbox-row'); if (r) r.classList.remove('field-invalid'); });
-
-/* ───────── 終了日の自動入力 ───────── */
-function bindAutoEndDate(startId, endId, spanDays = 6){
-  const s = document.getElementById(startId), e = document.getElementById(endId);
-  if (!s || !e) return;
-  const fill = () => {
-    if (!s.value) return;
-    if (!e.value || e.value < s.value) e.value = formatISO(addDays(parseISO(s.value), spanDays));
-  };
-  fill();
-  s.addEventListener('change', fill);
-}
-
-/* ───────── バックアップ（書き出し／読み込み） ───────── */
-// ※ APIキーは安全のため含めません（書き出したファイルを他人に渡しても漏れないように）。
-const BACKUP_KEYS = [
-  STORAGE_KEY, REF_STORAGE_KEY, LEECH_KEY, SCORE_KEY, ANALYSIS_KEY,
-  DAILY_PROGRESS_KEY, MONTH_GOAL_KEY, REVIEW_DONE_KEY, 'vocab-completion-dismissed'
-];
-const LAST_BACKUP_KEY = 'vocab-last-backup';
-
-function exportBackup(){
-  const data = {};
-  BACKUP_KEYS.forEach(k => {
-    let v = null;
-    try { v = localStorage.getItem(k); } catch (e) {}
-    if (v != null) data[k] = v;
-  });
-  const payload = { app: 'self-studying', version: 1, exportedAt: new Date().toISOString(), data };
-  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `self-studying-backup-${todayISO()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  try { localStorage.setItem(LAST_BACKUP_KEY, todayISO()); } catch (e) {}
-  renderBackupStatus();
-  showToast('バックアップを書き出しました。ダウンロードされたファイルを保管してください。');
-}
-
-async function importBackupFile(file){
-  if (!file) return;
-  let parsed;
-  try { parsed = JSON.parse(await file.text()); }
-  catch (e) { showToast('ファイルを読み込めませんでした（バックアップファイルではありません）。'); return; }
-  const data = parsed && parsed.app === 'self-studying' && parsed.data;
-  if (!data || typeof data !== 'object') { showToast('このアプリのバックアップファイルではありません。'); return; }
-  const keys = Object.keys(data).filter(k => BACKUP_KEYS.includes(k) && typeof data[k] === 'string');
-  if (keys.length === 0) { showToast('復元できるデータが見つかりませんでした。'); return; }
-  const day = parsed.exportedAt ? String(parsed.exportedAt).slice(0, 10) : '日付不明';
-  if (!confirm(`バックアップ（${day}）の内容で、この端末の現在のデータを置き換えます。よろしいですか？`)) return;
-  try {
-    BACKUP_KEYS.forEach(k => { if (keys.includes(k)) localStorage.setItem(k, data[k]); else localStorage.removeItem(k); });
-  } catch (e) {
-    showToast('保存に失敗しました。ブラウザの保存容量をご確認ください。');
-    return;
-  }
-  location.reload();
-}
-
-function renderBackupStatus(){
-  let last = null;
-  try { last = localStorage.getItem(LAST_BACKUP_KEY); } catch (e) {}
-  const el = document.getElementById('backupStatus');
-  if (el) el.textContent = last ? `最終バックアップ：${last}` : 'まだバックアップしていません';
-  const nudge = document.getElementById('backupNudge');
-  if (nudge) {
-    const days = last ? Math.floor((parseISO(todayISO()) - parseISO(last)) / 86400000) : null;
-    const hasData = dailyProgress.length >= 5; // ある程度記録が溜まってから案内する
-    nudge.style.display = (hasData && (days === null || days >= 14)) ? 'flex' : 'none';
-  }
-}
-
-// ブラウザに「このデータは自動削除しないで」と依頼する（対応ブラウザのみ。失敗しても問題なし）
-async function requestPersistentStorage(){
-  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
 }
