@@ -43,6 +43,8 @@ function renderEntryList(){
     },
     onEdit: (id) => startEditEntry(id),
     onDelete: async (id) => {
+      // 【修正】参考書側と同様に、誤クリックでスケジュールが消えないよう確認する
+      if (!confirm('この単語のスケジュールを削除しますか？')) return;
       // 編集中の項目が削除された場合は編集モードを解除しておく（不整合防止）
       if (editingEntryId === id) exitEntryEditMode();
       entries = entries.filter(e => e.id !== id);
@@ -83,6 +85,7 @@ function setPlanFormState(state){ wordFormController.setFormState(state); }
 function startEditEntry(id){ wordFormController.startEdit(id); }
 function exitEntryEditMode(){ wordFormController.exitEditMode(); }
 function cancelEditEntry(){ wordFormController.cancelEdit(); }
+function finishEntryEditAfterSave(){ wordFormController.finishEditAfterSave(); }
 
 /* ───────── 単語登録の入力チェック ───────── */
 /**
@@ -101,8 +104,9 @@ function buildAndValidateWordEntry(showError){
   const planMode = document.querySelector('input[name="planMode"]:checked').value;
   const amountPerDay = Number(document.getElementById('amountPerDay').value);
 
-  if(!startNum || !endNum || endNum < startNum){
-    showError('開始番号・終了番号を正しく入力してください（終了番号は開始番号以上）。'); return null;
+  // 【修正】小数（例: 1.5）や 0・負数を弾く。小数が通ると範囲・復習キーが小数になり計算が崩れる
+  if(!Number.isInteger(startNum) || !Number.isInteger(endNum) || startNum < 1 || endNum < startNum){
+    showError('開始番号・終了番号を正しく入力してください（1以上の整数で、終了番号は開始番号以上）。'); return null;
   }
   if(!startDate){ showError('開始日を選択してください。'); return null; }
 
@@ -114,7 +118,7 @@ function buildAndValidateWordEntry(showError){
 
   if(weekdays.length === 0){ showError('学習する曜日を1つ以上選んでください。'); return null; }
   if(intervals.length === 0){ showError('復習のタイミングを1つ以上選んでください。'); return null; }
-  if(planMode === 'byAmount' && (!amountPerDay || amountPerDay <= 0)){
+  if(planMode === 'byAmount' && (!Number.isInteger(amountPerDay) || amountPerDay <= 0)){
     showError('1日あたりの単語数を正しく入力してください。'); return null;
   }
 
@@ -140,9 +144,33 @@ async function handleAdd(){
     setList: (arr) => { entries = arr; },
     getEditingId: () => editingEntryId,
     exitEditMode: exitEntryEditMode,
-    applyEdit: (item, newFields) => ({ ...item, ...newFields }),
+    // 【追加】編集保存後は、編集を始める前のフォーム内容へ戻す（復習間隔・曜日などの持ち越し防止）
+    finishEditAfterSave: finishEntryEditAfterSave,
+    // 【追加】範囲を変えると進捗記録が削除されるため、記録がある場合は保存前に確認する
+    confirmEdit: (item, nf) =>
+      (item.startNum === nf.startNum && item.endNum === nf.endNum) ||
+      !dailyProgress.some(p => p.type === 'word' && (p.originEntryId || p.entryId) === item.id) ||
+      confirm('範囲（開始・終了番号）を変えると、この単語のこれまでの進捗記録が削除されます。続けますか？'),
+    applyEdit: (item, newFields) => {
+      // ★修正：範囲（開始・終了番号）を変えた場合、旧範囲に基づく進捗記録を破棄する
+      //   （残すと新範囲の外の番号が再配分されるため）
+      if (item.startNum !== newFields.startNum || item.endNum !== newFields.endNum) {
+        dailyProgress = dailyProgress.filter(p =>
+          !(p.type === 'word' && (p.originEntryId || p.entryId) === item.id));
+        saveDailyProgress();
+      }
+      return { ...item, ...newFields };
+    },
     idPrefix: 'e_',
     save: saveEntries,
     render: renderAll,
+    // 【修正】登録後は次の開始番号を自動入力し、終了番号を空にする（再クリックによる二重登録を防ぐ）
+    afterSave: ({ wasEditing } = {}) => {
+      if (wasEditing) return; // 編集保存では次の番号の自動入力をしない（編集前のフォームへ復元済み）
+      const endEl = document.getElementById('endNum');
+      const next = Number(endEl.value) + 1;
+      document.getElementById('startNum').value = Number.isInteger(next) ? next : '';
+      endEl.value = '';
+    },
   });
 }
