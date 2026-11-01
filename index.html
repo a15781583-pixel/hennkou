@@ -8,8 +8,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" defer></script>
-<link rel="stylesheet" href="css-style.css">
-<link rel="stylesheet" href="css-ai-features.css">
+<link rel="stylesheet" href="css-style.css?v=20261101">
+<link rel="stylesheet" href="css-ai-features.css?v=20261101">
 </head>
 <body>
 <div class="app">
@@ -63,7 +63,15 @@
     <!-- 追加：スケジュール表示ビュー -->
   <div id="tab-schedule" class="tab-content">
 
-    <!-- ★ 月目標カード -->
+    <!-- ★ バックアップのお知らせ（記録が溜まってから、14日以上バックアップしていないときだけ表示） -->
+    <div class="backup-nudge no-print" id="backupNudge" style="display:none;">
+      <span>💾 記録が溜まってきました。端末の故障やデータ削除に備えて、バックアップを保存しましょう。</span>
+      <button type="button" class="btn-primary backup-export-btn">今すぐバックアップ</button>
+    </div>
+
+    <!-- ★ 月目標カード（折りたたみ。閉じていても目標の1行目が見出しに出る） -->
+    <details class="mg-fold" id="monthGoalFold">
+    <summary>🎯 今月の目標<span id="monthGoalSummaryText" class="mg-fold-text"></span></summary>
     <div class="month-goal-card" id="monthGoalCard">
       <div class="mg-header">
         <div class="mg-label" id="monthGoalLabel">今月の目標</div>
@@ -78,6 +86,7 @@
         </div>
       </div>
     </div>
+    </details>
 
     <!-- ★ 完了後の「次のタスク設定」案内（一連の学習＋復習がすべて完了したときだけ表示） -->
     <div id="completionPromptArea"></div>
@@ -99,6 +108,20 @@
 
     <!-- スケジュールが日付順に並ぶコンテナ -->
     <div id="integratedScheduleList" style="display: flex; flex-direction: column; gap: 12px;"></div>
+
+    <!-- ★ データのバックアップ（記録はこの端末のブラウザ内にだけ保存されているため、定期的な保存をおすすめします） -->
+    <details class="setup-details backup-details no-print" id="backupDetails" style="margin-top:24px;">
+      <summary>💾 データのバックアップ</summary>
+      <p class="hint" style="margin:10px 0;">
+        記録はこの端末のブラウザ内にだけ保存されています。機種変更やブラウザのデータ削除で消えないよう、ときどき書き出して保管してください（APIキーは含まれません）。
+      </p>
+      <div class="backup-actions">
+        <button type="button" class="btn-primary backup-export-btn">⬇ バックアップを書き出す</button>
+        <label class="btn-ghost backup-import-label" for="backupImportInput">⬆ バックアップから復元</label>
+        <input type="file" id="backupImportInput" accept="application/json,.json" style="display:none;">
+      </div>
+      <div class="hint" id="backupStatus" style="margin-top:8px;"></div>
+    </details>
   </div>
 
   <div id="tab-study" class="tab-content" style="display:none;">
@@ -113,11 +136,11 @@
           <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:.85rem;">
             <!-- valueを byRange に変更し、文言を合わせます -->
             <input type="radio" name="planMode" value="byRange" checked>
-            学習する曜日から設定（開始日〜終了日で均等に分ける）
+            期間で割る<span class="radio-sub">（開始日〜終了日で均等に）</span>
           </label>
           <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:.85rem;">
             <input type="radio" name="planMode" value="byAmount">
-            1日の単語数を指定する（終了番号まで数週間続く）
+            1日の量で割る<span class="radio-sub">（終了番号まで続ける）</span>
           </label>
         </div>
       </div>
@@ -153,14 +176,17 @@
           <div class="checkbox-row" id="weekdayRow"></div>
         </div>
         <div class="field full">
-          <label>復習を入れるタイミング</label>
-          <div class="checkbox-row" id="intervalRow"></div>
-          <div class="hint">推奨：1日後・3日後・7日後・14日後。他教科との兼ね合いで負担が大きければ間引いてOKです。</div>
+          <details class="fold-mini" id="intervalFold">
+            <summary>🔁 復習のタイミング <span class="fold-summary-val" id="intervalRowSummary"></span><span class="fold-summary-hint">ふつうはこのままでOK</span></summary>
+            <div class="checkbox-row" id="intervalRow"></div>
+            <div class="hint">推奨：1日後・3日後・7日後・14日後。他教科との兼ね合いで負担が大きければ間引いてOKです。</div>
+          </details>
         </div>
       </div>
       <div class="error-msg" id="errorMsg"></div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
         <button class="btn-primary" id="addBtn">この範囲をスケジュールに追加</button>
+        <button type="button" class="btn-ghost" id="nextRangeBtn" style="display:none;">↪ 前回の続きを入力</button>
         <button class="btn-ghost" id="cancelEditBtn" style="display:none;">編集をキャンセル</button>
         <button class="btn-ghost" id="resetBtn">登録した範囲をすべて削除</button>
       </div>
@@ -236,11 +262,11 @@
             <div style="display:flex; gap:16px; margin-top:6px; flex-wrap:wrap;">
               <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:.85rem;">
                 <input type="radio" name="refPlanMode" value="byRange" checked>
-                学習する曜日から設定（開始日〜終了日で均等に分ける）
+                期間で割る<span class="radio-sub">（開始日〜終了日で均等に）</span>
               </label>
               <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:.85rem;">
                 <input type="radio" name="refPlanMode" value="byAmount">
-                1日の進める量を指定する（終了ページまで数週間続く）
+                1日の量で割る<span class="radio-sub">（終了ページまで続ける）</span>
               </label>
             </div>
           </div>
@@ -254,16 +280,16 @@
               <label for="refEndPage">終了ページ</label>
               <input type="number" id="refEndPage" class="input-field" min="1" placeholder="例: 432" style="width: 100%;">
             </div>
-            <div>
+            <div class="field">
               <label for="refStartDate">開始日</label>
               <input type="date" id="refStartDate" class="input-field" style="width: 100%;">
             </div>
-            <div id="refEndDateWrap">
-              <label>終了日</label>
+            <div class="field" id="refEndDateWrap">
+              <label for="refEndDate">終了日</label>
               <input type="date" id="refEndDate" class="input-field" style="width: 100%;">
             </div>
-            <div id="refAmountFieldWrap" style="display: none;">
-              <label>1日あたり進める量</label>
+            <div class="field" id="refAmountFieldWrap" style="display: none;">
+              <label for="refAmountPerDay">1日あたり進める量</label>
               <input type="number" id="refAmountPerDay" min="1" placeholder="例: 5" class="input-field" style="width: 100%;">
             </div>
           </div>
@@ -274,15 +300,18 @@
         </div>
 
         <div class="field full" id="refIntervalWrap" style="margin-bottom: 15px;">
-          <label>復習を入れるタイミング</label>
-          <div class="checkbox-row" id="refIntervalRow"></div>
-          <div class="hint">推奨：1日後・3日後・7日後・14日後。他教科との兼ね合いで負担が大きければ間引いてOKです。</div>
+          <details class="fold-mini" id="refIntervalFold">
+            <summary>🔁 復習のタイミング <span class="fold-summary-val" id="refIntervalRowSummary"></span><span class="fold-summary-hint">ふつうはこのままでOK</span></summary>
+            <div class="checkbox-row" id="refIntervalRow"></div>
+            <div class="hint">推奨：1日後・3日後・7日後・14日後。他教科との兼ね合いで負担が大きければ間引いてOKです。</div>
+          </details>
         </div>
 
         <div class="error-msg" id="refErrorMsg"></div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button id="saveRefPlanBtn" class="btn-primary" style="flex:1; min-width:200px;">スケジュールを生成して登録</button>
           <button id="cancelRefEditBtn" class="btn-ghost" style="display:none;">編集をキャンセル</button>
+          <button type="button" id="refNextBtn" class="btn-ghost" style="display:none;">↪ 前回と同じ設定（曜日・期間・復習）を使う</button>
         </div>
 
       </div><!-- /.ref-setting-body -->
@@ -508,14 +537,14 @@
   <!-- ★③ ここに追記：JavaScriptの読み込み（</body>直前） -->
   <!-- ===== JavaScript（上から順に読み込まれます。順番を入れ替えないでください） =====
        ファイルを修正したら、下の ?v= の数字（日付など）を変えると、生徒のブラウザに古い版が残りません ===== -->
-  <script src="js-common.js" defer></script>          <!-- 設定・共通の道具（最初） -->
-  <script src="js-word.js" defer></script>            <!-- ① 単語スケジュール設定タブ -->
-  <script src="js-reference.js" defer></script>       <!-- ② 参考書スケジュール設定タブ -->
-  <script src="js-schedule-calc.js" defer></script>   <!-- ③-a スケジュールへの反映（計算） -->
-  <script src="js-schedule-view.js" defer></script>   <!-- ③-b スケジュールへの反映（画面） -->
-  <script src="js-test.js" defer></script>            <!-- ④ 単語テスト・苦手単語・成績 -->
-  <script src="js-main.js" defer></script>            <!-- タブ切替・起動処理（必ず最後から2番目） -->
-  <script src="js-ai-features.js" defer></script>     <!-- AI学習計画・AI弱点分析（既存・最後） -->
+  <script src="js-common.js?v=20261101" defer></script>          <!-- 設定・共通の道具（最初） -->
+  <script src="js-word.js?v=20261101" defer></script>            <!-- ① 単語スケジュール設定タブ -->
+  <script src="js-reference.js?v=20261101" defer></script>       <!-- ② 参考書スケジュール設定タブ -->
+  <script src="js-schedule-calc.js?v=20261101" defer></script>   <!-- ③-a スケジュールへの反映（計算） -->
+  <script src="js-schedule-view.js?v=20261101" defer></script>   <!-- ③-b スケジュールへの反映（画面） -->
+  <script src="js-test.js?v=20261101" defer></script>            <!-- ④ 単語テスト・苦手単語・成績 -->
+  <script src="js-main.js?v=20261101" defer></script>            <!-- タブ切替・起動処理（必ず最後から2番目） -->
+  <script src="js-ai-features.js?v=20261101" defer></script>     <!-- AI学習計画・AI弱点分析（既存・最後） -->
 
 </body>
 </html>
