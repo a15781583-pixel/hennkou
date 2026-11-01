@@ -284,9 +284,12 @@
     width:15px; height:15px; border-radius:50%; border:1.5px solid var(--margin-red); font-size:.6rem;
   }
   /* ---------- 復習チェック（完了チェックボックス／遅延バッジ） ---------- */
-  .review-check-label{ cursor:pointer; }
-  .review-check-label input.review-check{ accent-color:var(--margin-red); margin:0; cursor:pointer; }
-  .tag-ref-review.review-check-label input.review-check{ accent-color:var(--success); }
+  /* 復習の完了チェックボックスは廃止（表示専用）。状態アイコン .review-status を表示する */
+  .review-check-label{ cursor:default; }
+  .review-status{ display:inline-flex; align-items:center; font-size:.72rem; font-weight:700; white-space:nowrap; text-decoration:none; }
+  .review-status.rs-partial{ color:#9a3412; }
+  .review-status.rs-none{ color:#b23a2e; }
+  .review-status.rs-pending{ opacity:.7; }
   .review-check-label.is-done{ opacity:.55; text-decoration:line-through; }
   .delay-badge{
     display:inline-block; font-size:.68rem; font-weight:700;
@@ -1509,3 +1512,24 @@
 
     .chip { position: relative; }
   }
+
+/* ─ 進捗入力：「やった日」入力欄（前日にやったが入力を忘れた分を、正しい日付で記録する） ─ */
+.prog-done-date-wrap{ margin-top:8px; }
+.prog-done-date-toggle{
+  background:none; border:none; box-shadow:none; padding:4px 0 0;
+  color:var(--ink-soft); font-size:.75rem; text-decoration:underline; cursor:pointer;
+}
+.prog-done-date-row{
+  flex-wrap:wrap; align-items:center; gap:6px; padding:6px 8px;
+  background:#fff7ed; border:1px solid #fed7aa; border-radius:6px; font-size:.78rem;
+}
+.prog-done-date-label{ font-weight:700; color:#9a3412; white-space:nowrap; }
+.prog-done-date{ font-size:.85rem; padding:3px 6px; border:1px solid var(--paper-line); border-radius:6px; background:#fff; }
+.prog-done-chip{
+  font-size:.75rem; padding:3px 9px; border-radius:999px; cursor:pointer;
+  background:#fff; color:var(--ink); border:1px solid var(--paper-line); box-shadow:none;
+}
+.prog-done-chip.active{ background:var(--ink); color:#fff; border-color:var(--ink); }
+/* 完了済みの復習（折りたたみ） */
+.progress-done-details{ margin-top:10px; border-top:1px dashed var(--paper-line); padding-top:6px; }
+.progress-done-details > summary{ cursor:pointer; font-size:.78rem; font-weight:700; color:var(--ink-soft); padding:4px 0; }
