@@ -1,3 +1,13 @@
+/* 【確認用・動作確認後に削除してよい】読み込まれた版を画面右下に表示する */
+window.SCHEDULE_VIEW_VERSION = 'view-v3 / 20261101b';
+console.info('[js-schedule-view] ' + window.SCHEDULE_VIEW_VERSION);
+document.addEventListener('DOMContentLoaded', function () {
+  var b = document.createElement('div');
+  b.textContent = window.SCHEDULE_VIEW_VERSION;
+  b.style.cssText = 'position:fixed;right:6px;bottom:6px;z-index:99999;background:#1f6f43;color:#fff;font-size:11px;padding:3px 8px;border-radius:10px;opacity:.85;pointer-events:none;';
+  document.body.appendChild(b);
+});
+
 /* =========================================================
    js-schedule-view.js  ─  ③-b スケジュールへの反映（画面）
    ---------------------------------------------------------
