@@ -49,10 +49,20 @@ function computeEffectiveReviewDate(originalIso, key){
     p.actualEnd >= p.plannedEnd
   );
 
+  const todayIso  = todayISO();
   if(reviewDoneSet.has(key) || isDoneInPanel){
+    // ★予定日を過ぎてから「今日」完了した復習は、今日のリスト（進捗入力パネルの「完了済み」）に残す。
+    //   予定日のまま表示すると今日の画面から消えてしまい、押し間違いを直せなくなるため。翌日以降は表示しない。
+    if(originalIso < todayIso && dailyProgress.some(p =>
+      (p.type === 'word-review' || p.type === 'book-review') &&
+      p.reviewKey != null && p.reviewKey.replace(MOVED_KEY_SUFFIX_RE, '') === key &&
+      p.date === todayIso && !p.notProgressed && p.actualEnd >= p.plannedEnd
+    )){
+      const lateDays = Math.round((parseISO(todayIso) - parseISO(originalIso)) / 86400000);
+      return { date: todayIso, delayedDays: lateDays, done: true };
+    }
     return { date: originalIso, delayedDays: 0, done: true };
   }
-  const todayIso  = todayISO();
   const diffDays  = Math.round(
     (parseISO(todayIso) - parseISO(originalIso)) / 86400000
   );
@@ -126,15 +136,29 @@ function buildProgressReviews(progressItems, prefix, getResolved, getEntity, get
     .map(p => {
       const resolved = getResolved(p);
       const entity = getEntity(resolved);
+      // 【修正】到達番号が開始番号に満たない（＝1件も進んでいない）記録は、復習する範囲が存在しないため除外
+      if (!(p.actualEnd >= p.plannedStart)) return null;
       return entity ? { p, resolved, entity } : null;
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    // 【修正】同日・同教材で範囲が重なった番号（余剰入力など）を二重に復習しない
+    .sort((a, b) => a.p.date.localeCompare(b.p.date) || a.p.plannedStart - b.p.plannedStart);
+  const lastEnd = new Map();
+  resolvedItems.forEach(it => {
+    const k = it.resolved + '_' + it.p.date;
+    const prev = lastEnd.get(k) ?? -Infinity;
+    it.reviewStart = Math.max(it.p.plannedStart, prev + 1);
+    lastEnd.set(k, Math.max(prev, it.p.actualEnd));
+  });
+  const reviewItems = resolvedItems.filter(it => it.reviewStart <= it.p.actualEnd);
 
   return buildReviewEntries(
-    resolvedItems,
+    reviewItems,
     (item, n) => `${prefix}_prog_${item.resolved}_${item.p.date}_${item.p.plannedStart}_${n}`,
-    item => item.p.date,
-    item => ({ rangeStart: item.p.plannedStart, rangeEnd: item.p.actualEnd }),
+    // ★実施日対応：復習の起点は「実際にやった日（doneDate）」。未指定なら従来どおり入力日(date)。
+    //   キーは入力日(date)のまま据え置く（編集・リセット・完了チェックの紐付けを壊さないため）
+    item => item.p.doneDate || item.p.date,
+    item => ({ rangeStart: item.reviewStart, rangeEnd: item.p.actualEnd }), // キーは plannedStart のまま、表示範囲だけ補正
     item => getIntervals(item.entity),
     item => extraFields(item.p, item.resolved, item.entity)
   );
@@ -462,7 +486,8 @@ function buildLeftoverChunks(material, progressRecords, originalChunks, idFields
   const gaps = [];
   let cur = material.startNum;
   merged.forEach(([s, e]) => {
-    if (s > cur) gaps.push([cur, Math.min(s - 1, upTo)]);
+    // 【修正】cur が upTo を超えている場合に、逆転した範囲（開始>終了）の穴が作られないようにする
+    if (s > cur && cur <= upTo) gaps.push([cur, Math.min(s - 1, upTo)]);
     cur = Math.max(cur, e + 1);
   });
   if (cur <= upTo) gaps.push([cur, upTo]);
@@ -472,7 +497,7 @@ function buildLeftoverChunks(material, progressRecords, originalChunks, idFields
   const originOf = (n) => {
     // 途中まで入力された記録の“残り”に該当する番号
     const tail = recsDesc.find(p => p.actualEnd < p.plannedEnd && n > p.actualEnd && n <= p.plannedEnd);
-    if (tail) return { src: tail.date, fromPartial: true };
+    if (tail) return { src: tail.doneDate || tail.date, fromPartial: true }; // ★実施日基準
     // 一度も着手していない番号 → 元の予定日（無ければ今日）
     const orig = originalChunks.find(c => n >= c.rangeStart && n <= c.rangeEnd);
     return { src: (orig && orig.date < todayStr) ? orig.date : todayStr, fromPartial: false };
@@ -494,6 +519,7 @@ function buildLeftoverChunks(material, progressRecords, originalChunks, idFields
         isAdjusted: true,
         ...(deferred ? { isCarriedNew: true } : { carriedForward: true }),
         originalDate: runOrigin.src,
+        ...(runOrigin.fromPartial ? { fromPartial: true } : {}), // 画面側：実施日の初期値を「予定日」にしない目印
       });
       runStart = n; runOrigin = o;
     }
@@ -523,6 +549,7 @@ function computeAdjustedSchedule(materialType, material) {
       rangeEnd: p.actualEnd,          // doneToday 計算用に据え置き
       plannedEnd: p.plannedEnd,       // ★追加：途中完了の判定・再保存時の予定終了を保持
       progressEntryId: p.entryId,     // ★追加：保存時の複合キーをそのまま持たせる
+      doneDate: p.doneDate,           // ★追加：実際にやった日（入力日と違う場合のみ値がある）
       ...idFields,
       isFromProgress: true
     }));
@@ -544,9 +571,9 @@ function computeAdjustedSchedule(materialType, material) {
   // ★ 最新の記録が「途中まで」か？（＝未完了の残りがある）
   //   その記録が今日のものなら、残りは当日中に置かず、次の学習日へ繰り越す。
   const isLatestPartial = latest.actualEnd < latest.plannedEnd;
-  const isPartialToday  = isLatestPartial && latest.date === todayStr;
+  const isPartialToday  = isLatestPartial && (latest.doneDate || latest.date) === todayStr; // ★実施日基準
   // 前日以前の「途中まで」が残っている場合の繰越バッジ用（元の予定日）
-  const carryOrigin = isLatestPartial ? latest.date : null;
+  const carryOrigin = isLatestPartial ? (latest.doneDate || latest.date) : null; // ★実施日基準
 
   const remainingStart = latest.actualEnd + 1;
   // BUGFIX③: endNum が undefined/null の場合（古いデータ等）は 0 をガード値として使用し、
@@ -584,7 +611,7 @@ function computeAdjustedSchedule(materialType, material) {
             ? Math.ceil((material.endNum - material.startNum + 1) / originalChunks.length)
             : remaining);
       const doneToday = pastChunks
-        .filter(c => c.date === todayStr)
+        .filter(c => (c.doneDate || c.date) === todayStr) // ★「今日やった分」は実施日で数える
         .reduce((sum, c) => sum + Math.max(0, c.rangeEnd - c.rangeStart + 1), 0);
       todayCapacity = Math.max(0, perDay - doneToday);
     }
@@ -599,16 +626,48 @@ function computeAdjustedSchedule(materialType, material) {
 
   if (todayCapacity > 0) {
     const todayCount = Math.min(todayCapacity, remaining);
-    todayChunks.push({
-      date: todayStr,
-      rangeStart: remainingStart,
-      rangeEnd: remainingStart + todayCount - 1,
-      ...idFields,
-      isAdjusted: true,
-      // 前日以前の「途中まで」の続きなら、繰越バッジを付ける
-      isCarriedNew: !!carryOrigin,
-      ...(carryOrigin ? { originalDate: carryOrigin } : {})
-    });
+    const todayEndNum = remainingStart + todayCount - 1;
+    // ★「前日以前の予定だったのに、記録がないまま残っている範囲」（＝入力し忘れ・やっていない分）を見つける。
+    //   以前はこの範囲が「今日の分」として普通に並ぶだけで、いつの予定だったか分からなかった。
+    //   元の予定日つきの繰越として印を付け、画面で「やった日」の初期値を予定日にできるようにする。
+    //   （「途中まで」の続き＝carryOrigin がある場合は従来どおり）
+    const lateChunk = carryOrigin ? null
+      : originalChunks.find(c => c.date < todayStr && c.rangeEnd >= remainingStart);
+    if (lateChunk) {
+      const lateMaxEnd = Math.max(...originalChunks.filter(c => c.date < todayStr).map(c => c.rangeEnd));
+      const lateEnd = Math.min(lateMaxEnd, todayEndNum);
+      todayChunks.push({
+        date: todayStr,
+        rangeStart: remainingStart,
+        rangeEnd: lateEnd,
+        ...idFields,
+        isAdjusted: true,
+        carriedForward: true,
+        originalDate: lateChunk.date
+      });
+      // 遅れ分を超える部分（本来の今日の分）は通常のタスクとして分ける
+      if (lateEnd < todayEndNum) {
+        todayChunks.push({
+          date: todayStr,
+          rangeStart: lateEnd + 1,
+          rangeEnd: todayEndNum,
+          ...idFields,
+          isAdjusted: true,
+          isCarriedNew: false
+        });
+      }
+    } else {
+      todayChunks.push({
+        date: todayStr,
+        rangeStart: remainingStart,
+        rangeEnd: todayEndNum,
+        ...idFields,
+        isAdjusted: true,
+        // 前日以前の「途中まで」の続きなら、繰越バッジを付ける
+        isCarriedNew: !!carryOrigin,
+        ...(carryOrigin ? { originalDate: carryOrigin } : {})
+      });
+    }
     futureStart = remainingStart + todayCount;
   }
 
@@ -621,9 +680,11 @@ function computeAdjustedSchedule(materialType, material) {
 
   // [Step 3] 将来チャンクがない場合：新規タスクを生成して配分
   if (futureChunks.length === 0 || material.planMode === 'byAmount') {
+    // 【修正】amountPerDay が未設定・NaN の場合、Math.max(1, NaN) が NaN になり
+    //   チャンクの範囲が NaN になって以降の割り振りが止まっていた。数値でなければ 1 とみなす。
     const amountPerDay = Math.max(1,
       material.planMode === 'byAmount'
-        ? material.amountPerDay
+        ? (Number(material.amountPerDay) || 1)
         : originalChunks.length > 0
           ? Math.ceil((material.endNum - material.startNum + 1) / originalChunks.length)
           : futureRemaining
@@ -705,11 +766,14 @@ function computeScheduleChunks(plan, extraFields = {}) {
   const start = parseISO(plan.startDate);
   const chunks = [];
   if (plan.planMode === 'byAmount') {
+    // 【修正】amountPerDay が 0・負数・小数・未設定だと、範囲が進まないまま空のチャンクを
+    //   大量に作ったり、小数の範囲になったりする。1以上の整数に正規化する。
+    const perDay = Math.max(1, Math.floor(Number(plan.amountPerDay)) || 1);
     let cursor = plan.startNum, daysAdded = 0;
     while (cursor <= plan.endNum && daysAdded <= 3650) {
       const d = addDays(start, daysAdded++);
       if (!(plan.weekdays || []).includes(d.getDay())) continue;
-      const count = Math.min(plan.amountPerDay, plan.endNum - cursor + 1);
+      const count = Math.min(perDay, plan.endNum - cursor + 1);
       chunks.push({ date: formatISO(d), rangeStart: cursor, rangeEnd: cursor + count - 1, ...extraFields });
       cursor += count;
     }
@@ -718,7 +782,10 @@ function computeScheduleChunks(plan, extraFields = {}) {
     const end = plan.endDate ? parseISO(plan.endDate) : addDays(start, 6);
     const studyDates = [];
     let cur = new Date(start);
-    while (cur <= end && studyDates.length <= 3650) {
+    // 【修正】学習曜日が1つも無い古いデータ＋遠い終了日の組み合わせで、
+    //   studyDates が増えないまま延々と日付を進める（画面フリーズ）ことを防ぐ上限
+    let dayGuard = 0;
+    while (cur <= end && studyDates.length <= 3650 && dayGuard++ < 40000) {
       if ((plan.weekdays || []).includes(cur.getDay())) studyDates.push(new Date(cur));
       cur = addDays(cur, 1);
     }
