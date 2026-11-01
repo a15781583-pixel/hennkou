@@ -162,7 +162,7 @@ function initDoneDateControls(container) {
     const chips  = wrap.querySelectorAll('.prog-done-chip');
     const sync = () => chips.forEach(c => c.classList.toggle('active', c.dataset.date === input.value));
     toggle?.addEventListener('click', () => { row.style.display = 'flex'; toggle.style.display = 'none'; });
-    chips.forEach(c => c.addEventListener('click', () => { input.value = c.dataset.date; sync(); input.dispatchEvent(new Event('change', { bubbles: true })); }));
+    chips.forEach(c => c.addEventListener('click', () => { input.value = c.dataset.date; sync(); }));
     input.addEventListener('change', sync);
     sync();
   });
@@ -1170,7 +1170,7 @@ function buildProgressInputSection(dateStr, dayWords, dayBooks, baseId, dayWordR
   return `
     <div class="progress-section" id="progress-section-${baseId}">
       <div class="progress-section-title">
-        📝 今日のタスク（「✅ 完了」は押すだけで自動記録）
+        📝 今日のタスク（完了したら進捗を入力）
         ${savedLabel}
       </div>
       ${itemsHtml}
@@ -1206,46 +1206,11 @@ function buildProgressInputSection(dateStr, dayWords, dayBooks, baseId, dayWordR
 function markAllProgressDone(baseId) {
   const section = document.getElementById(`progress-section-${baseId}`);
   if (!section) return;
-  // 一括操作中は、1件ごとの自動記録を止める（保存は「📌 進捗を記録」ボタンでまとめて行う）
-  _suppressAutoSave = true;
-  try {
-    section.querySelectorAll('.prog-control-ui').forEach(ui => {
-      const hidden = ui.querySelector('.progress-num-input');
-      const doneBtn = ui.querySelector('.prog-btn-done');
-      if (hidden && doneBtn && hidden.value === '') doneBtn.click();
-    });
-  } finally {
-    _suppressAutoSave = false;
-  }
-}
-
-/**
- * 【追加】「✅ 完了」を押した項目を、その場で自動記録する（記録ボタンを押す手間をなくす）。
- *  ・記録後5秒間は、トーストの「元に戻す」で取り消せる（handleProgressSave が表示）
- *  ・「途中まで」「進んでいない」は値の確認が要るため、従来どおり記録ボタンで保存する
- *  ・ほかに未記録の入力（途中まで入力中など）があるときは自動記録せず、記録ボタンにまとめる
- *    （再描画で、入力途中の内容を消さないため）
- */
-let _suppressAutoSave = false;
-function isProgressInputDirty(inp) {
-  if (inp.value === '') return false;
-  const init = inp.dataset.initialVal;
-  if (init === undefined || init === '' || parseInt(init, 10) !== parseInt(inp.value, 10)) return true;
-  // 値は同じでも「やった日」を変えていれば未記録の変更とみなす
-  const dd = inp.closest('.progress-item')?.querySelector('.prog-done-date');
-  const initDd = inp.dataset.initialDoneDate;
-  return !!(dd && initDd !== undefined && dd.value && dd.value !== initDd);
-}
-function autoSaveProgressItem(hiddenInput, dateStr, baseId) {
-  if (_suppressAutoSave) return;
-  const section = document.getElementById(`progress-section-${baseId}`);
-  if (!section) return;
-  let others = 0;
-  section.querySelectorAll('.progress-num-input').forEach(inp => {
-    if (inp !== hiddenInput && isProgressInputDirty(inp)) others++;
+  section.querySelectorAll('.prog-control-ui').forEach(ui => {
+    const hidden = ui.querySelector('.progress-num-input');
+    const doneBtn = ui.querySelector('.prog-btn-done');
+    if (hidden && doneBtn && hidden.value === '') doneBtn.click();
   });
-  if (others > 0) return;
-  handleProgressSave(dateStr, baseId);
 }
 
 /**
@@ -1324,8 +1289,6 @@ function initProgressControls(container, dateStr, baseId) {
           extraPanel.style.display = 'none';
         }
         if (extraLink) extraLink.style.display = 'inline-block';
-        // 【追加】押した時点で自動記録（再描画されるため、必ず最後に呼ぶ）
-        autoSaveProgressItem(hiddenInput, dateStr, baseId);
       });
     }
 
@@ -1372,7 +1335,6 @@ function initProgressControls(container, dateStr, baseId) {
           hiddenInput.dispatchEvent(new Event('input')); // previewProgressAdjustment を起動
           extraPanel.style.display = 'none';
           if (extraLink) extraLink.style.display = 'inline-block';
-          autoSaveProgressItem(hiddenInput, dateStr, baseId); // 【追加】「✅ 記録」を押した時点で自動記録
         });
       }
     }
@@ -1465,10 +1427,6 @@ function attachProgressInputHandlers(container, dateStr, baseId) {
   // 新UIのインタラクションもここで初期化
   initProgressControls(container, dateStr, baseId);
   initDoneDateControls(container); // 「やった日」入力欄
-  // 【追加】「やった日」だけ変えた場合も、記録ボタンで未記録を知らせる
-  container.querySelectorAll('.prog-done-date').forEach(d => {
-    d.addEventListener('change', () => updateProgressDirty(container));
-  });
 }
 
 /**
@@ -1947,7 +1905,9 @@ function buildOnboardingHtml() {
 function countUnsavedProgress() {
   let n = 0;
   document.querySelectorAll('.progress-section .progress-num-input').forEach(inp => {
-    if (isProgressInputDirty(inp)) n++;
+    if (inp.value === '') return;
+    const init = inp.dataset.initialVal;
+    if (init === undefined || init === '' || parseInt(init, 10) !== parseInt(inp.value, 10)) n++;
   });
   return n;
 }
@@ -1956,7 +1916,9 @@ function countUnsavedProgress() {
 function updateProgressDirty(container) {
   let n = 0;
   container.querySelectorAll('.progress-num-input').forEach(inp => {
-    if (isProgressInputDirty(inp)) n++;
+    if (inp.value === '') return;
+    const init = inp.dataset.initialVal;
+    if (init === undefined || init === '' || parseInt(init, 10) !== parseInt(inp.value, 10)) n++;
   });
   container.querySelectorAll('.progress-save-row .btn-primary').forEach(btn => {
     if (btn.dataset.label === undefined) btn.dataset.label = btn.textContent.trim();
