@@ -10,14 +10,6 @@
 
 /* ───────── タブ切り替え・起動処理 ───────── */
 function showTab(tabName) {
-  // 【追加】進捗を入力したまま「記録」を押さずに別タブへ移ると、戻ったときに入力が消えてしまう。
-  //   気づけるよう知らせる（スケジュールタブを表示中に他タブへ移るときだけ）。
-  const scheduleEl = document.getElementById('tab-schedule');
-  const leavingSchedule = scheduleEl && scheduleEl.style.display !== 'none' && tabName !== 'schedule';
-  if (leavingSchedule && typeof countUnsavedProgress === 'function' && countUnsavedProgress() > 0) {
-    showToast('記録していない進捗があります。スケジュールタブに戻って「記録」を押してください。');
-  }
-
   // タブコンテンツの表示・非表示を切り替え
   document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
   const tabEl = document.getElementById('tab-' + tabName);
@@ -47,9 +39,7 @@ function showTab(tabName) {
   // 「スケジュール」タブを開いたときは、最新の統合スケジュールを再描画する
   // 【修正】描画を最後に回し、例外が出てもタブ切り替え（表示・ボタン・ボトムナビ）自体は必ず完了させる。
   //   以前は描画で例外が出ると、タブのボタン状態が更新されないまま処理が止まっていた。
-  // 【追加】未記録の入力が残っている間は、再描画で入力を消さないよう再描画を見送る
-  const hasUnsaved = typeof countUnsavedProgress === 'function' && countUnsavedProgress() > 0;
-  if (tabName === 'schedule' && !hasUnsaved) {
+  if (tabName === 'schedule') {
     try { renderIntegratedSchedule(); }
     catch (e) { console.error('[showTab] スケジュールの描画に失敗:', e); }
   }
@@ -68,18 +58,6 @@ function showTab(tabName) {
   } catch (e) { console.error('[init] チップ生成に失敗:', e); }
   const startDateEl = document.getElementById('startDate');
   if (startDateEl) startDateEl.value = todayISO();
-  // 【追加】開始日を選ぶと終了日を「開始日＋6日」に自動入力する（入力の手間を減らす）
-  bindAutoEndDate('startDate', 'endDate');
-  // 【追加】「前回の続きを入力」ボタン
-  document.getElementById('nextRangeBtn')?.addEventListener('click', prefillNextWordRange);
-  // 【追加】バックアップの書き出し／読み込み
-  document.querySelectorAll('.backup-export-btn').forEach(b => b.addEventListener('click', exportBackup));
-  const importInput = document.getElementById('backupImportInput');
-  importInput?.addEventListener('change', async () => {
-    await importBackupFile(importInput.files && importInput.files[0]);
-    importInput.value = ''; // 同じファイルをもう一度選べるようにリセット
-  });
-  requestPersistentStorage(); // ブラウザに「データを自動削除しないで」と依頼（対応ブラウザのみ）
   document.getElementById('addBtn')?.addEventListener('click', handleAdd);
   document.getElementById('cancelEditBtn')?.addEventListener('click', cancelEditEntry);
   document.getElementById('leechAddBtn')?.addEventListener('click', handleLeechAdd);
@@ -118,7 +96,6 @@ function showTab(tabName) {
   await safe('単語一覧の描画', () => renderAll());
   await safe('参考書データの読込', () => loadRefEntries()); // 参考書データを先に読み込む（DOMContentLoadedから移動）
   await safe('統合スケジュールの描画', () => renderIntegratedSchedule()); // 「スケジュール」タブは初期表示タブなので、読み込み直後に描画する
-  await safe('バックアップ状況の表示', () => renderBackupStatus());
   await safe('月目標カードの描画', () => {
     renderMonthGoalCard();      // 月目標カードを初期表示
     document.getElementById('monthGoalEditBtn')?.addEventListener('click', openMonthGoalEditor);
@@ -128,16 +105,6 @@ function showTab(tabName) {
   await safe('苦手単語の読込・描画', async () => {
     await loadLeech();
     renderLeech();
-  });
-
-  // ---- 日付が変わったら画面を最新の日付で描き直す ----
-  // タブを開いたままの端末（スマホ等）で日付をまたぐと、古い日付のまま進捗が入力・保存されてしまうため。
-  // （タブに戻ったとき・画面に焦点が戻ったとき・1分ごとに、日付が変わっていないか確認する）
-  await safe('日付変更の監視', () => {
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfDateChanged(); });
-    window.addEventListener('focus', refreshIfDateChanged);
-    window.addEventListener('pageshow', refreshIfDateChanged);
-    setInterval(() => { if (!document.hidden) refreshIfDateChanged(); }, 60000);
   });
 
   // ---- 成績・弱点分析タブの初期化 ----
