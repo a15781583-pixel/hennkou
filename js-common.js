@@ -60,9 +60,20 @@ function loadFromStorage(key, fallback = []) {
   }
   catch(e) { return fallback; }
 }
+// 【修正】保存に失敗（容量超過・プライベートブラウズ等）しても無言のままだと、
+//   画面上は登録できたように見えるのにリロードで消えてしまう。失敗を true/false で返し、
+//   初回のみ利用者へ知らせる。
+let _storageErrorNotified = false;
 function saveToStorage(key, data) {
-  try { localStorage.setItem(key, JSON.stringify(data)); }
-  catch(e) { console.error('Storage error:', e); }
+  try { localStorage.setItem(key, JSON.stringify(data)); return true; }
+  catch(e) {
+    console.error('Storage error:', e);
+    if (!_storageErrorNotified) {
+      _storageErrorNotified = true;
+      alert('データの保存に失敗しました。ブラウザの保存容量がいっぱい、またはプライベートブラウズ中の可能性があります。このままだと、入力した内容がページを閉じると消えてしまいます。');
+    }
+    return false;
+  }
 }
 // ──────────────────────────────────────────────────────────────
 
@@ -83,6 +94,14 @@ function formatISO(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d
 function parseISO(s){ const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
 function addDays(d, n){ const nd = new Date(d); nd.setDate(nd.getDate()+n); return nd; }
 function todayISO(){ return formatISO(new Date()); }
+
+// 【追加】DOM の準備ができたら実行する。すでに準備済みなら即実行する。
+//   （window.addEventListener('DOMContentLoaded', …) だけだと、スクリプトが後から
+//    読み込まれた場合に一度も実行されず、フォームが初期化されないため）
+function onDomReady(fn){
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
+  else fn();
+}
 
 /* ───────── 曜日・復習間隔のチップ（単語/参考書共通） ───────── */
 /* ---------- weekly range entries (shared) ---------- */
@@ -214,15 +233,25 @@ function createFormController(cfg){
       if (!entry) return;
 
       // 今フォームに入っている内容を退避（キャンセルされた場合に戻すため）
-      cfg.setSnapshot(controller.getFormState());
+      // 【修正】すでに別の項目を編集中の場合は、最初に退避した内容を上書きしない
+      //   （上書きすると、キャンセルしても「直前に編集していた別項目の内容」がフォームに残ってしまう）
+      if (!cfg.getSnapshot()) cfg.setSnapshot(controller.getFormState());
+
+      // 【修正】古いデータ（planMode 未設定）は「期間指定」として扱う。
+      //   以前は planMode が undefined のためラジオが更新されず、直前の選択のまま編集が始まっていた。
+      //   終了日が無い古い期間指定データは、計算側（開始日から1週間）と同じ終了日を補う。
+      const editPlanMode = entry.planMode || 'byRange';
+      const editEndDate = (editPlanMode === 'byRange' && !entry.endDate && entry.startDate)
+        ? formatISO(addDays(parseISO(entry.startDate), 6))
+        : entry.endDate;
 
       controller.setFormState({
-        planMode: entry.planMode,
+        planMode: editPlanMode,
         bookName: entry.bookName,
         startNum: entry.startNum,
         endNum: entry.endNum,
         startDate: entry.startDate,
-        endDate: entry.endDate,
+        endDate: editEndDate,
         amountPerDay: entry.amountPerDay,
         weekdays: entry.weekdays,
         intervals: entry.intervals,
@@ -258,6 +287,13 @@ function createFormController(cfg){
       if (actionBtn) actionBtn.textContent = cfg.defaultActionText;
       const cancelBtn = document.getElementById(cfg.cancelBtnId);
       if (cancelBtn) cancelBtn.style.display = 'none';
+    },
+    // 編集内容の保存が成功した後：編集モードを抜け、フォームを「編集を始める前の状態」に戻す
+    // （戻さないと、編集した項目の復習間隔・曜日などが次の新規登録に持ち越されてしまう）
+    finishEditAfterSave(){
+      const snapshot = cfg.getSnapshot();
+      controller.exitEditMode();
+      if (snapshot) controller.setFormState(snapshot);
     },
     // 「編集をキャンセル」ボタン押下時：フォームを編集前の状態に戻す
     cancelEdit(){
@@ -296,18 +332,27 @@ async function handleSaveEntry(cfg){
   const list = cfg.getList();
   const editingId = cfg.getEditingId();
 
-  if (editingId) {
+  // 【修正】編集対象がすでに存在しない場合（別タブで削除された等）、以前は何も保存されないまま
+  //   「保存した」ように見えていた。その場合は新規追加として扱う。
+  const isEditing = !!editingId && list.some(item => item.id === editingId);
+
+  // 【追加】進捗記録が消えるなど、取り消せない変更を伴う編集は、保存前に確認する（中止なら何も変更しない）
+  if (isEditing && cfg.confirmEdit && !cfg.confirmEdit(list.find(item => item.id === editingId), newFields)) return;
+
+  if (isEditing) {
     // 編集モード：IDを維持したまま内容だけ差し替える
     // （IDを変えると復習履歴・進捗記録との紐付けが切れてしまうため）
     cfg.setList(list.map(item => item.id === editingId ? cfg.applyEdit(item, newFields) : item));
-    cfg.exitEditMode();
+    // 【修正】編集保存後は、フォームを編集前の状態へ戻す（finishEditAfterSave 未指定なら従来どおり）
+    (cfg.finishEditAfterSave || cfg.exitEditMode)();
   } else {
+    if (editingId) cfg.exitEditMode(); // 編集対象が消えていた場合は編集モードを解除
     cfg.setList([...list, { ...newFields, id: genId(cfg.idPrefix) }]);
   }
 
   await cfg.save();
   cfg.render();
-  cfg.afterSave?.();
+  cfg.afterSave?.({ wasEditing: isEditing });
 }
 
 /* ───────── HTMLエスケープの道具 ───────── */
