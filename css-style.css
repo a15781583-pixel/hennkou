@@ -1201,18 +1201,6 @@
   ══════════════════════════════════════════════ */
   .prog-control-ui { margin-top: 8px; }
 
-  /* ─ 完了 / 未完了 選択ステップ ─ */
-  .prog-step1-label {
-    font-size: .78rem; font-weight: 700; color: var(--ink-soft);
-    margin-bottom: 6px; display: flex; align-items: center; gap: 5px;
-  }
-  .prog-step1-label::before {
-    content: '①'; font-size: .7rem; background: var(--ink-soft); color: var(--white);
-    border-radius: 50%; width: 16px; height: 16px;
-    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  }
-  .prog-step1-label.step-done::before { background: var(--success); }
-  .prog-step1-label.step-partial::before { background: var(--gold); }
   .prog-toggle { display: flex; gap: 8px; flex-wrap: wrap; }
   .prog-btn {
     display: inline-flex; align-items: center; gap: 5px;
@@ -1248,11 +1236,7 @@
   }
   .prog-btn-not-progressed:hover:not(.prog-btn-active) { border-color: var(--ink-soft); color: var(--ink); }
 
-  /* ─ step1ラベル：進んでいない状態 ─ */
-  .prog-step1-label.step-not-progressed::before { background: var(--ink-soft); }
 
-  /* ─ ステータスバッジ（既存記録あり時） ─ */
-  .prog-status-wrap { margin-top: 6px; }
 
   /* ─ 途中まで パネル ─ */
   .prog-partial-panel {
@@ -1300,16 +1284,6 @@
   .prog-display-input::-webkit-outer-spin-button,
   .prog-display-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .prog-display-input:focus { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
-  /* ページ数入力エリアの見出し */
-  .prog-partial-heading {
-    font-size: .78rem; font-weight: 700; color: var(--ink-soft);
-    margin-bottom: 8px; display: flex; align-items: center; gap: 5px;
-  }
-  .prog-partial-heading::before {
-    content: '②'; font-size: .7rem; background: var(--gold); color: var(--white);
-    border-radius: 50%; width: 16px; height: 16px;
-    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  }
   .prog-unit { font-size: .82rem; color: var(--ink-soft); white-space: nowrap; }
 
   /* ── 余剰ページ入力パネル ── */
@@ -1388,7 +1362,6 @@
 
   /* ─ モバイル最適化（進捗入力をコンパクトに：3ボタンを1段に・余白を詰める） ─ */
   @media (max-width: 640px) {
-    .prog-step1-label { display: none; }  /* 「完了しましたか？」行は省略 */
     .prog-toggle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
     .prog-btn {
       padding: 7px 2px; font-size: .75rem; min-height: 34px;
@@ -1515,10 +1488,6 @@
 
 /* ─ 進捗入力：「やった日」入力欄（前日にやったが入力を忘れた分を、正しい日付で記録する） ─ */
 .prog-done-date-wrap{ margin-top:8px; }
-.prog-done-date-toggle{
-  background:none; border:none; box-shadow:none; padding:4px 0 0;
-  color:var(--ink-soft); font-size:.75rem; text-decoration:underline; cursor:pointer;
-}
 .prog-done-date-row{
   flex-wrap:wrap; align-items:center; gap:6px; padding:6px 8px;
   background:#fff7ed; border:1px solid #fed7aa; border-radius:6px; font-size:.78rem;
@@ -1636,4 +1605,69 @@ details.mg-fold > .month-goal-card{ margin-top:0; border-top-left-radius:0; bord
 .backup-actions{ display:flex; gap:8px; flex-wrap:wrap; }
 .backup-actions .btn-primary, .backup-actions .backup-import-label{
   min-height:44px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-sizing:border-box;
+}
+
+
+/* =========================================================
+   【追加】進捗入力のコンパクト化
+   ・「今日のタスク」「復習タスク」をそれぞれ折りたたみに
+   ・「やった日」を1行の折りたたみに（完了／途中まで を選んだ項目だけに表示）
+========================================================= */
+.progress-section{ padding:8px 10px; }
+.prog-control-ui{ margin-top:6px; }
+
+/* ─ 折りたたみ本体 ─ */
+.prog-fold{
+  border:1px solid var(--paper-line); border-radius:8px;
+  background:var(--white); margin-bottom:8px;
+}
+.prog-fold > .prog-fold-summary{
+  list-style:none; cursor:pointer; user-select:none;
+  display:flex; align-items:center; gap:8px;
+  padding:9px 12px; font-size:.88rem; font-weight:700; color:var(--ink);
+}
+.prog-fold > .prog-fold-summary::-webkit-details-marker{ display:none; }
+.prog-fold > .prog-fold-summary::before{
+  content:'▸'; font-size:.8rem; color:var(--ink-soft);
+  transition:transform .15s; flex-shrink:0;
+}
+.prog-fold[open] > .prog-fold-summary::before{ transform:rotate(90deg); }
+.prog-fold-title{ display:inline-flex; align-items:center; gap:6px; flex:1; min-width:0; }
+.prog-fold-num{
+  font-family:'IBM Plex Mono', monospace; font-size:.72rem; font-weight:700;
+  background:var(--paper); border:1px solid var(--paper-line); border-radius:999px;
+  padding:0 7px; color:var(--ink-soft);
+}
+.prog-fold-count{
+  font-size:.74rem; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap;
+}
+.prog-fold-count:empty{ display:none; }
+.prog-fold-count.is-pending{ background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; }
+.prog-fold-count.is-complete{ background:var(--success-bg); color:var(--success); border:1px solid #bcd6c4; }
+.prog-fold-body{ padding:0 12px 8px; }
+.prog-fold-tools{ display:flex; justify-content:flex-end; margin:0 0 2px; }
+.prog-markall-btn{ font-size:.75rem; padding:4px 10px; }
+.prog-fold-body .progress-review-divider{ margin:8px 0 6px; font-size:.78rem; }
+.prog-fold-body .progress-done-details{ margin-top:6px; }
+
+/* ─ 「やった日」：1行の折りたたみ ─ */
+.prog-done-date-wrap{ margin-top:2px; flex-basis:100%; width:100%; }
+.prog-done-fold > summary{
+  list-style:none; cursor:pointer; display:inline-block;
+  font-size:.74rem; color:var(--ink-soft); padding:2px 0;
+}
+.prog-done-fold > summary::-webkit-details-marker{ display:none; }
+.prog-done-fold > summary::after{ content:' ▾'; }
+.prog-done-fold[open] > summary::after{ content:' ▴'; }
+.prog-done-current{ font-weight:700; text-decoration:underline dotted; text-underline-offset:2px; }
+/* 今日以外が選ばれているときは、閉じたままでも目立たせる */
+.prog-done-fold.is-changed > summary{ color:#9a3412; font-weight:700; }
+.prog-done-fold .prog-done-date-row{ display:flex; margin-top:4px; }
+
+@media (max-width: 640px){
+  .progress-section{ padding:6px; }
+  .prog-fold{ margin-bottom:6px; }
+  .prog-fold > .prog-fold-summary{ padding:8px 10px; font-size:.84rem; }
+  .prog-fold-body{ padding:0 8px 6px; }
+  .prog-fold-count{ font-size:.7rem; padding:2px 7px; }
 }
