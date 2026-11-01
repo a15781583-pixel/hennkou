@@ -21,6 +21,10 @@ onDomReady(() => {
     refStartDateInput.value = todayISO();
   }
 
+  // 【追加】開始日を選ぶと終了日を「開始日＋6日」に自動入力（入力の手間を1つ減らす）
+  bindAutoEndDate('refStartDate', 'refEndDate');
+  document.getElementById('refNextBtn')?.addEventListener('click', prefillRefFromLast);
+
   // 学習する曜日のチップを生成（単語スケジュールと同じ仕組みを再利用）
   buildWeekdayChips('refWeekdayRow', DEFAULT_WEEKDAYS);
   // 復習インターバルは進捗入力時に DEFAULT_INTERVALS で自動生成するため、チップ選択UIは不要
@@ -112,21 +116,39 @@ function buildAndValidateRefEntry(showError){
   const weekdays = getCheckedValues('refWeekdayRow');
   const intervals = getCheckedValues('refIntervalRow');
 
-  // 【修正】単語側と同じく、1以上の整数のみ許可（0や小数の黙った切り捨てを防ぐ）
-  if (!bookName || !Number.isInteger(startNum) || !Number.isInteger(endNum) || startNum < 1 || endNum < 1 || !startDate) {
-    showError('すべての項目を正しく入力してください（ページは1以上の整数）。');
+  // 【改善】「すべての項目を…」とまとめず、どの欄が悪いかを赤枠＋メッセージで示す（flagInvalid）。
+  //   ページは単語側と同じく、1以上の整数のみ許可（0や小数の黙った切り捨てを防ぐ）
+  if (!bookName) {
+    showError('参考書名を入力してください。');
+    flagInvalid(['refBookName']);
+    return null;
+  }
+  const badPages = [];
+  if (!Number.isInteger(startNum) || startNum < 1) badPages.push('refStartPage');
+  if (!Number.isInteger(endNum) || endNum < 1) badPages.push('refEndPage');
+  if (badPages.length) {
+    showError('ページは1以上の整数で入力してください。');
+    flagInvalid(badPages);
     return null;
   }
   if (startNum > endNum) {
     showError('開始ページは終了ページ以下の数値を入力してください。');
+    flagInvalid(['refStartPage', 'refEndPage']);
+    return null;
+  }
+  if (!startDate) {
+    showError('開始日を選択してください。');
+    flagInvalid(['refStartDate']);
     return null;
   }
   if (weekdays.length === 0) {
     showError('学習する曜日を1つ以上選んでください。');
+    flagInvalid(['refWeekdayRow']);
     return null;
   }
   if (intervals.length === 0) {
     showError('復習のタイミングを1つ以上選んでください。');
+    flagInvalid(['refIntervalRow']);
     return null;
   }
 
@@ -144,6 +166,7 @@ function buildAndValidateRefEntry(showError){
     const amount = parseInt(document.getElementById('refAmountPerDay').value, 10);
     if (!amount || amount <= 0) {
       showError('1日あたり進める量を正しく入力してください。');
+      flagInvalid(['refAmountPerDay']);
       return null;
     }
     newPlan.amountPerDay = amount;
@@ -151,10 +174,12 @@ function buildAndValidateRefEntry(showError){
     const endDate = document.getElementById('refEndDate').value;
     if (!endDate) {
       showError('終了日を選択してください。');
+      flagInvalid(['refEndDate']);
       return null;
     }
     if (parseISO(endDate) < parseISO(startDate)) {
       showError('終了日は開始日以降の日付にしてください。');
+      flagInvalid(['refEndDate']);
       return null;
     }
     newPlan.endDate = endDate;
@@ -163,6 +188,7 @@ function buildAndValidateRefEntry(showError){
   // 事前にスケジュールを計算し、該当日がなければ登録前に知らせる
   if (computeRefSchedule(newPlan).length === 0) {
     showError('指定した期間・曜日では学習日がありません。設定を見直してください。');
+    flagInvalid(planMode === 'byRange' ? ['refWeekdayRow', 'refStartDate', 'refEndDate'] : ['refWeekdayRow']);
     return null;
   }
 
@@ -223,6 +249,44 @@ function renderRefEntryList(){
       renderRefSchedule();
     },
   });
+  updateRefNextBtn(); // 【追加】「前回と同じ設定を使う」ボタンの出し分け
+}
+
+/* ───────── 【追加】「前回と同じ設定を使う」ボタン ───────── */
+// 新しい参考書を登録するとき、前回の「割り振り方法・1日の量・曜日・復習間隔・期間の長さ」を引き継ぐ。
+// 参考書名とページは新しい教材ごとに違うため空にする（開始日は今日、終了日は前回と同じ長さ）。
+function updateRefNextBtn(){
+  const btn = document.getElementById('refNextBtn');
+  if (!btn) return;
+  btn.style.display = (refEntries.length > 0 && !editingRefEntryId) ? '' : 'none';
+}
+
+function prefillRefFromLast(){
+  if (editingRefEntryId) return;
+  const last = refEntries[refEntries.length - 1];
+  if (!last) { showToast('まだ登録された参考書がありません。'); return; }
+  const mode = last.planMode || 'byRange';
+  let spanDays = 27;
+  if (mode === 'byRange' && last.endDate && last.startDate) {
+    spanDays = Math.max(0, Math.round((parseISO(last.endDate) - parseISO(last.startDate)) / 86400000));
+  }
+  const start = parseISO(todayISO());
+  clearFieldErrors();
+  const errorEl = document.getElementById('refErrorMsg');
+  if (errorEl) errorEl.textContent = '';
+  refFormController.setFormState({
+    planMode: mode,
+    bookName: '',
+    startNum: '',
+    endNum: '',
+    startDate: formatISO(start),
+    endDate: formatISO(addDays(start, spanDays)),
+    amountPerDay: last.amountPerDay ?? '',
+    weekdays: last.weekdays || DEFAULT_WEEKDAYS,
+    intervals: last.intervals || DEFAULT_INTERVALS,
+  });
+  showToast('前回と同じ曜日・期間・復習の設定を入力しました。参考書名とページを入れてください。');
+  document.getElementById('refBookName')?.focus();
 }
 
 // ── 参考書スケジュールの編集モード ────────────────────────────
