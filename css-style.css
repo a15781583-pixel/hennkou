@@ -284,12 +284,9 @@
     width:15px; height:15px; border-radius:50%; border:1.5px solid var(--margin-red); font-size:.6rem;
   }
   /* ---------- 復習チェック（完了チェックボックス／遅延バッジ） ---------- */
-  /* 復習の完了チェックボックスは廃止（表示専用）。状態アイコン .review-status を表示する */
-  .review-check-label{ cursor:default; }
-  .review-status{ display:inline-flex; align-items:center; font-size:.72rem; font-weight:700; white-space:nowrap; text-decoration:none; }
-  .review-status.rs-partial{ color:#9a3412; }
-  .review-status.rs-none{ color:#b23a2e; }
-  .review-status.rs-pending{ opacity:.7; }
+  .review-check-label{ cursor:pointer; }
+  .review-check-label input.review-check{ accent-color:var(--margin-red); margin:0; cursor:pointer; }
+  .tag-ref-review.review-check-label input.review-check{ accent-color:var(--success); }
   .review-check-label.is-done{ opacity:.55; text-decoration:line-through; }
   .delay-badge{
     display:inline-block; font-size:.68rem; font-weight:700;
@@ -670,7 +667,7 @@
       gap: 3px;
       padding: 6px 2px;
       cursor: pointer;
-      font-size: .66rem; /* 【改善】小さすぎて読みにくかった .6rem から拡大 */
+      font-size: .6rem;
       font-weight: 600;
       color: var(--ink-soft);
       border: none;
@@ -908,19 +905,19 @@
   /* [ai-features.html] AIチャットスタイル → ai-features.html に移動 */
   /* ---------- 進捗入力セクション ---------- */
   .progress-section {
-    margin-top: 14px;
-    padding: 14px 16px;
+    margin-top: 12px;
+    padding: 10px 12px;
     background: #f8fafc;
     border: 1.5px dashed var(--paper-line);
     border-radius: 10px;
   }
   .progress-section-title {
-    font-weight: 700; font-size: .88rem; color: var(--ink); margin-bottom: 10px;
+    font-weight: 700; font-size: .88rem; color: var(--ink); margin-bottom: 2px;
     display: flex; align-items: center; gap: 6px;
   }
   .progress-item {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 8px 0; border-bottom: 1px solid var(--paper-line); font-size: .85rem;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 6px 0; border-bottom: 1px solid var(--paper-line); font-size: .85rem;
   }
   .progress-item:last-of-type { border-bottom: none; }
   .progress-plan-label {
@@ -1004,9 +1001,9 @@
     background: #f8f9ff;
     border-left: 3px solid #93c5fd;
     border-radius: 0 6px 6px 0;
-    padding: 8px 10px 8px 12px;
+    padding: 6px 8px 6px 10px;
     border-bottom: none;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
   .progress-item.review-item.t2 { border-left-color: #6ee7b7; background: #f0fdf4; }
   .progress-item.review-item.t3 { border-left-color: #fcd34d; background: #fffbeb; }
@@ -1198,13 +1195,39 @@
 
   /* ══════════════════════════════════════════════
      進捗入力 新UI（ボタン＋ステッパー方式）
+     ※ コンパクト化：「完了しましたか？」見出し／記録バッジ／余剰パネルの見出し・「記録」ボタンを廃止
   ══════════════════════════════════════════════ */
-  .prog-control-ui { margin-top: 8px; }
+  .prog-control-ui { margin-top: 6px; }
 
-  .prog-toggle { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* ─ 折り畳みグループ（今日のタスク／復習タスク） ─ */
+  details.prog-group {
+    margin-top: 8px;
+    border: 1px solid var(--paper-line); border-radius: 8px; background: var(--white);
+  }
+  details.prog-group > summary {
+    cursor: pointer; list-style: none; user-select: none;
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 10px; font-size: .82rem; font-weight: 700; color: var(--ink);
+  }
+  details.prog-group > summary::-webkit-details-marker { display: none; }
+  details.prog-group > summary::before {
+    content: "▸"; display: inline-block; width: 1em; color: var(--ink-soft); font-size: .78rem;
+  }
+  details.prog-group[open] > summary::before { content: "▾"; }
+  .prog-group-count { font-size: .72rem; font-weight: 600; color: var(--ink-soft); }
+  .prog-group-rec {
+    margin-left: auto; font-size: .72rem; font-weight: 700; color: var(--success);
+    background: var(--success-bg); border: 1px solid #bcd6c4; border-radius: 4px; padding: 1px 6px;
+    white-space: nowrap;
+  }
+  .prog-group-body { padding: 0 10px 6px; border-top: 1px solid var(--paper-line); }
+  .prog-group-body .progress-review-divider { margin: 8px 0 4px; }
+
+  /* ─ 完了 / 途中まで / 進んでいない ボタン ─ */
+  .prog-toggle { display: flex; gap: 6px; flex-wrap: wrap; }
   .prog-btn {
     display: inline-flex; align-items: center; gap: 5px;
-    padding: 9px 16px; font-size: .88rem; font-weight: 700;
+    padding: 6px 12px; font-size: .82rem; font-weight: 700;
     border-radius: 8px; cursor: pointer; border: 1.5px solid transparent;
     transition: all .18s; font-family: 'Noto Sans JP', sans-serif;
     box-shadow: none;
@@ -1236,21 +1259,19 @@
   }
   .prog-btn-not-progressed:hover:not(.prog-btn-active) { border-color: var(--ink-soft); color: var(--ink); }
 
-
-
   /* ─ 途中まで パネル ─ */
   .prog-partial-panel {
-    margin-top: 10px; padding: 12px 14px;
+    margin-top: 6px; padding: 8px 10px;
     background: var(--white); border: 1px solid var(--paper-line); border-radius: 8px;
   }
 
   /* ─ 完了数 / プログレスバー行 ─ */
   .prog-count-row {
     display: flex; align-items: center; gap: 8px;
-    font-size: .82rem; margin-bottom: 10px;
+    font-size: .82rem; margin-bottom: 6px;
   }
   .prog-count-val {
-    font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 1.15rem;
+    font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 1.1rem;
     color: var(--ink);
   }
   .prog-count-total { color: var(--ink-soft); flex: 1; }
@@ -1262,10 +1283,9 @@
     height: 100%; background: var(--gold); border-radius: 4px; transition: width .25s;
   }
 
-  /* ─ ±ステッパー行 ─ */
+  /* ─ 数値入力行 ─ */
   .prog-stepper {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    margin-bottom: 8px;
   }
   .prog-display {
     font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 1.05rem;
@@ -1273,105 +1293,72 @@
     background: var(--paper); border: 1.5px solid var(--ink); border-radius: 6px;
     padding: 5px 8px; display: inline-block;
   }
-  /* 直接タイピング可能な数値入力フィールド */
-  .prog-display-input {
-    font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 1.05rem;
-    width: 72px; text-align: center;
+  /* 直接タイピング可能な数値入力フィールド
+     ※ 全体設定 input[type=number] に詳細度で負けないよう input.クラス名 で指定 */
+  input.prog-display-input {
+    font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 1rem;
+    width: 68px; text-align: center;
     background: var(--white); border: 2px solid var(--ink); border-radius: 6px;
-    padding: 5px 8px; color: var(--ink); cursor: text;
+    padding: 3px 6px; color: var(--ink); cursor: text;
     -moz-appearance: textfield;
   }
   .prog-display-input::-webkit-outer-spin-button,
   .prog-display-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .prog-display-input:focus { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
+  input.prog-display-input:focus { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
   .prog-unit { font-size: .82rem; color: var(--ink-soft); white-space: nowrap; }
 
-  /* ── 余剰ページ入力パネル ── */
+  /* ── 追加欄（予定より多く進んだ分）──
+     「完了」を押すと自動で表示。1行にまとめ、±1ボタンと入力欄は小さな固定サイズ。
+     ※ 全体設定 button{padding:10px 18px} / input[type=number]{padding:8px 10px} が
+        効いて ±1 の文字が枠からはみ出していたため、padding:0 と固定サイズで上書きする。 */
   .prog-extra-panel {
-    margin-top: 10px;
-    padding: 10px 12px;
-    background: #eaf6ee;
-    border: 1px solid #a8dab5;
-    border-radius: 8px;
+    margin-top: 6px; padding: 5px 8px;
+    background: #eaf6ee; border: 1px solid #a8dab5; border-radius: 8px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   }
-  .prog-extra-heading {
-    font-size: .8rem;
-    font-weight: 700;
-    color: #1b5e20;
-    margin-bottom: 8px;
+  .prog-extra-panel .prog-extra-no-btn {
+    height: 26px; padding: 0 10px; margin: 0;
+    border: 1px solid #9e9e9e; border-radius: 6px; background: #fff; color: #555;
+    font-size: .75rem; font-weight: 600; line-height: 1; cursor: pointer; box-shadow: none;
   }
-  .prog-extra-options {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
+  .prog-extra-panel .prog-extra-no-btn:hover { background: #f5f5f5; }
+  .prog-extra-panel .prog-extra-step {
+    position: relative; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; min-width: 0; padding: 0; margin: 0;
+    border: 1px solid #9e9e9e; border-radius: 6px; background: #fff; color: var(--ink);
+    font-family: 'IBM Plex Mono', monospace; font-size: .72rem; font-weight: 700; line-height: 1;
+    cursor: pointer; box-shadow: none;
   }
-  .prog-extra-no-btn {
-    padding: 5px 12px;
-    border: 1px solid #9e9e9e;
-    border-radius: 6px;
-    background: #fff;
-    cursor: pointer;
-    font-size: .8rem;
-    color: #555;
+  /* 見た目は小さいまま、指で押せる範囲だけ周囲に広げる */
+  .prog-extra-panel .prog-extra-step::after {
+    content: ""; position: absolute; top: -4px; right: -3px; bottom: -4px; left: -3px;
   }
-  .prog-extra-no-btn:hover { background: #f5f5f5; }
-  .prog-extra-input-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  .prog-extra-panel .prog-extra-step:hover { background: #f5f5f5; }
+  .prog-extra-panel input.prog-extra-input {
+    flex: 0 0 auto; width: 40px; height: 26px; margin: 0; padding: 0 2px;
+    border: 1px solid #9e9e9e; border-radius: 6px; background: #fff; color: var(--ink);
+    font-family: 'IBM Plex Mono', monospace; font-size: .8rem; line-height: 1; text-align: center;
+    -moz-appearance: textfield;
   }
-  .prog-extra-input {
-    width: 54px;
-    text-align: center;
-    border: 1px solid #9e9e9e;
-    border-radius: 6px;
-    padding: 4px 6px;
-    font-size: .85rem;
-  }
-  .prog-extra-step {
-    width: 28px; height: 28px;
-    border: 1px solid #9e9e9e;
-    border-radius: 6px;
-    background: #fff;
-    cursor: pointer;
-    font-size: .85rem;
-  }
-  .prog-extra-unit {
-    font-size: .78rem;
-    color: #555;
-  }
-  .prog-extra-confirm-btn {
-    padding: 5px 12px;
-    border: none;
-    border-radius: 6px;
-    background: #2e7d32;
-    color: #fff;
-    cursor: pointer;
-    font-size: .8rem;
-    font-weight: 700;
-  }
-  .prog-extra-confirm-btn:hover { background: #1b5e20; }
+  .prog-extra-input::-webkit-outer-spin-button,
+  .prog-extra-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .prog-extra-unit { font-size: .75rem; color: #555; white-space: nowrap; }
 
-  /* ─ 「＋ 予定より多く進んだ」リンク（余剰パネルを開く） ─ */
-  .prog-extra-open-link {
-    background: none; border: none; box-shadow: none;
-    color: var(--ink-soft); font-size: .75rem; text-decoration: underline;
-    padding: 6px 0 0; cursor: pointer;
-  }
-
-  /* ─ モバイル最適化（進捗入力をコンパクトに：3ボタンを1段に・余白を詰める） ─ */
+  /* ─ モバイル最適化（3ボタンを1段に・余白を詰める） ─ */
   @media (max-width: 640px) {
     .prog-toggle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
     .prog-btn {
       padding: 7px 2px; font-size: .75rem; min-height: 34px;
       justify-content: center; text-align: center; line-height: 1.2; border-radius: 6px;
     }
-    .prog-partial-panel { padding: 8px 10px; }
-    .prog-display-input { width: 60px; font-size: .95rem; padding: 3px 6px; }
-    .prog-extra-panel { padding: 6px 8px; margin-top: 6px; }
-    .prog-extra-heading { font-size: .72rem; margin-bottom: 4px; }
+    .prog-partial-panel { padding: 6px 8px; }
+    input.prog-display-input { width: 60px; font-size: .95rem; padding: 3px 6px; }
+    .prog-extra-panel { padding: 5px 8px; margin-top: 6px; }
     .progress-item { padding: 6px 0; gap: 4px; }
+    .progress-plan-label { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+    details.prog-group > summary { padding: 8px 10px; }
+    .prog-group-body { padding: 0 8px 4px; }
   }
 
 
@@ -1485,189 +1472,3 @@
 
     .chip { position: relative; }
   }
-
-/* ─ 進捗入力：「やった日」入力欄（前日にやったが入力を忘れた分を、正しい日付で記録する） ─ */
-.prog-done-date-wrap{ margin-top:8px; }
-.prog-done-date-row{
-  flex-wrap:wrap; align-items:center; gap:6px; padding:6px 8px;
-  background:#fff7ed; border:1px solid #fed7aa; border-radius:6px; font-size:.78rem;
-}
-.prog-done-date-label{ font-weight:700; color:#9a3412; white-space:nowrap; }
-.prog-done-date{ font-size:.85rem; padding:3px 6px; border:1px solid var(--paper-line); border-radius:6px; background:#fff; }
-.prog-done-chip{
-  font-size:.75rem; padding:3px 9px; border-radius:999px; cursor:pointer;
-  background:#fff; color:var(--ink); border:1px solid var(--paper-line); box-shadow:none;
-}
-.prog-done-chip.active{ background:var(--ink); color:#fff; border-color:var(--ink); }
-/* 完了済みの復習（折りたたみ） */
-.progress-done-details{ margin-top:10px; border-top:1px dashed var(--paper-line); padding-top:6px; }
-.progress-done-details > summary{ cursor:pointer; font-size:.78rem; font-weight:700; color:var(--ink-soft); padding:4px 0; }
-
-/* =========================================================
-   【追加】UI改善（入力の手間削減・継続利用のための部品）
-========================================================= */
-
-/* ---------- トースト通知（alert の代わり） ---------- */
-.toast-host{
-  position:fixed; left:50%; transform:translateX(-50%); bottom:24px; z-index:2000;
-  display:flex; flex-direction:column; gap:8px; align-items:center;
-  width:min(92vw, 460px); pointer-events:none;
-}
-.toast{
-  pointer-events:auto; width:100%; box-sizing:border-box;
-  display:flex; gap:12px; align-items:center; justify-content:space-between;
-  background:var(--ink); color:var(--white); border-radius:10px; padding:11px 14px;
-  font-size:.85rem; line-height:1.5; box-shadow:0 6px 20px rgba(0,0,0,.25);
-  animation:toast-in .2s ease-out;
-}
-.toast-action{
-  background:transparent; border:1px solid rgba(255,255,255,.65); color:var(--white);
-  border-radius:6px; padding:6px 12px; font-size:.8rem; font-weight:700; cursor:pointer;
-  white-space:nowrap; min-height:36px; font-family:inherit;
-}
-@keyframes toast-in{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
-@media (max-width:640px){
-  .toast-host{ bottom:calc(76px + env(safe-area-inset-bottom, 0px)); } /* ボトムナビの上に出す */
-}
-@media print{ .toast-host{ display:none; } }
-
-/* ---------- 入力エラーの欄ハイライト ---------- */
-.field-invalid{
-  border-color:var(--danger) !important;
-  box-shadow:0 0 0 3px rgba(178,58,46,.15);
-}
-.checkbox-row.field-invalid{
-  outline:2px solid var(--danger); outline-offset:4px; border-radius:8px;
-}
-
-/* ---------- 割り振り方法ラジオの補足文字 ---------- */
-.radio-sub{ color:var(--ink-soft); font-size:.74rem; margin-left:2px; }
-
-/* ---------- 折りたたみ（復習のタイミング／凡例／月目標） ---------- */
-details.fold-mini{
-  border:1px dashed var(--paper-line); border-radius:8px; padding:8px 12px; background:var(--white);
-}
-details.fold-mini > summary{
-  cursor:pointer; font-size:.85rem; font-weight:600; color:var(--ink);
-  display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; min-height:32px;
-}
-details.fold-mini[open] > summary{ margin-bottom:8px; }
-.fold-summary-val{ color:var(--gold); font-weight:700; font-size:.8rem; }
-.fold-summary-hint{ color:var(--ink-soft); font-weight:400; font-size:.74rem; }
-
-details.review-legend-fold{ margin-bottom:6px; }
-details.review-legend-fold > summary{
-  cursor:pointer; font-size:.78rem; color:var(--ink-soft); padding:4px 2px; min-height:28px;
-}
-details.review-legend-fold[open] > summary{ margin-bottom:6px; }
-
-details.mg-fold{ margin-bottom:12px; }
-details.mg-fold > summary{
-  cursor:pointer; font-size:.9rem; font-weight:700; color:var(--ink);
-  background:var(--white); border:1px solid var(--paper-line); border-radius:var(--radius);
-  padding:10px 14px; min-height:44px; display:flex; align-items:center; flex-wrap:wrap; gap:2px;
-}
-details.mg-fold[open] > summary{ border-bottom-left-radius:0; border-bottom-right-radius:0; }
-.mg-fold-text{ font-weight:500; color:var(--ink-soft); font-size:.82rem; margin-left:2px; }
-details.mg-fold > .month-goal-card{ margin-top:0; border-top-left-radius:0; border-top-right-radius:0; }
-
-/* ---------- 記録ボタン：未記録の入力があるとき ---------- */
-.btn-primary.is-dirty{
-  background:var(--gold); color:var(--white);
-  animation:dirty-pulse 1.8s ease-in-out infinite;
-}
-.btn-primary.is-dirty:hover{ background:#8d6717; }
-@keyframes dirty-pulse{
-  0%,100%{ box-shadow:0 0 0 0 rgba(169,124,31,.5); }
-  50%{ box-shadow:0 0 0 7px rgba(169,124,31,0); }
-}
-@media (prefers-reduced-motion: reduce){
-  .btn-primary.is-dirty, .toast{ animation:none; }
-}
-
-/* ---------- 初回案内（何も登録されていないとき） ---------- */
-.onboarding-card{
-  background:var(--white); border:1px solid var(--paper-line); border-left:4px solid var(--gold);
-  border-radius:var(--radius); padding:18px 18px 16px;
-}
-.onboarding-card .ob-title{ font-weight:700; color:var(--ink); font-size:1rem; margin-bottom:8px; }
-.onboarding-card .ob-steps{ margin:0 0 14px 1.2em; padding:0; color:var(--ink-soft); font-size:.88rem; line-height:1.8; }
-.onboarding-card .ob-actions{ display:flex; gap:8px; flex-wrap:wrap; }
-.onboarding-card .ob-actions button{ min-height:44px; flex:1; min-width:150px; }
-
-/* ---------- バックアップ ---------- */
-.backup-nudge{
-  display:flex; gap:10px 14px; align-items:center; justify-content:space-between; flex-wrap:wrap;
-  background:var(--gold-bg); border:1px solid var(--gold); color:var(--ink);
-  border-radius:var(--radius); padding:10px 14px; margin-bottom:12px; font-size:.84rem; line-height:1.55;
-}
-.backup-nudge .btn-primary{ min-height:40px; }
-.backup-actions{ display:flex; gap:8px; flex-wrap:wrap; }
-.backup-actions .btn-primary, .backup-actions .backup-import-label{
-  min-height:44px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-sizing:border-box;
-}
-
-
-/* =========================================================
-   【追加】進捗入力のコンパクト化
-   ・「今日のタスク」「復習タスク」をそれぞれ折りたたみに
-   ・「やった日」を1行の折りたたみに（完了／途中まで を選んだ項目だけに表示）
-========================================================= */
-.progress-section{ padding:8px 10px; }
-.prog-control-ui{ margin-top:6px; }
-
-/* ─ 折りたたみ本体 ─ */
-.prog-fold{
-  border:1px solid var(--paper-line); border-radius:8px;
-  background:var(--white); margin-bottom:8px;
-}
-.prog-fold > .prog-fold-summary{
-  list-style:none; cursor:pointer; user-select:none;
-  display:flex; align-items:center; gap:8px;
-  padding:9px 12px; font-size:.88rem; font-weight:700; color:var(--ink);
-}
-.prog-fold > .prog-fold-summary::-webkit-details-marker{ display:none; }
-.prog-fold > .prog-fold-summary::before{
-  content:'▸'; font-size:.8rem; color:var(--ink-soft);
-  transition:transform .15s; flex-shrink:0;
-}
-.prog-fold[open] > .prog-fold-summary::before{ transform:rotate(90deg); }
-.prog-fold-title{ display:inline-flex; align-items:center; gap:6px; flex:1; min-width:0; }
-.prog-fold-num{
-  font-family:'IBM Plex Mono', monospace; font-size:.72rem; font-weight:700;
-  background:var(--paper); border:1px solid var(--paper-line); border-radius:999px;
-  padding:0 7px; color:var(--ink-soft);
-}
-.prog-fold-count{
-  font-size:.74rem; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap;
-}
-.prog-fold-count:empty{ display:none; }
-.prog-fold-count.is-pending{ background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; }
-.prog-fold-count.is-complete{ background:var(--success-bg); color:var(--success); border:1px solid #bcd6c4; }
-.prog-fold-body{ padding:0 12px 8px; }
-.prog-fold-tools{ display:flex; justify-content:flex-end; margin:0 0 2px; }
-.prog-markall-btn{ font-size:.75rem; padding:4px 10px; }
-.prog-fold-body .progress-review-divider{ margin:8px 0 6px; font-size:.78rem; }
-.prog-fold-body .progress-done-details{ margin-top:6px; }
-
-/* ─ 「やった日」：1行の折りたたみ ─ */
-.prog-done-date-wrap{ margin-top:2px; flex-basis:100%; width:100%; }
-.prog-done-fold > summary{
-  list-style:none; cursor:pointer; display:inline-block;
-  font-size:.74rem; color:var(--ink-soft); padding:2px 0;
-}
-.prog-done-fold > summary::-webkit-details-marker{ display:none; }
-.prog-done-fold > summary::after{ content:' ▾'; }
-.prog-done-fold[open] > summary::after{ content:' ▴'; }
-.prog-done-current{ font-weight:700; text-decoration:underline dotted; text-underline-offset:2px; }
-/* 今日以外が選ばれているときは、閉じたままでも目立たせる */
-.prog-done-fold.is-changed > summary{ color:#9a3412; font-weight:700; }
-.prog-done-fold .prog-done-date-row{ display:flex; margin-top:4px; }
-
-@media (max-width: 640px){
-  .progress-section{ padding:6px; }
-  .prog-fold{ margin-bottom:6px; }
-  .prog-fold > .prog-fold-summary{ padding:8px 10px; font-size:.84rem; }
-  .prog-fold-body{ padding:0 8px 6px; }
-  .prog-fold-count{ font-size:.7rem; padding:2px 7px; }
-}
