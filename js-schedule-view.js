@@ -50,13 +50,13 @@ function reviewLegendHTML() {
 // ── STEP 8：統一バッジ生成ヘルパー ────────────────────────────
 
 /**
- * 「未完了繰越」バッジのHTMLを返す（テーブルビュー・カードビュー共通）
- * @param {string|null} originalDate - 元の予定日（'YYYY-MM-DD'）。なければ省略表示
+ * 「未完了」バッジのHTMLを返す（テーブルビュー・カードビュー共通）
+ * 【変更】表示を「未完了繰越 [日付]」から「未完了」に一本化（日付は表示しない）。
+ * @param {string|null} [originalDate] - 互換のため引数は残すが、表示には使わない
  * @param {string} [cls='carry-badge'] - 付与するクラス名
  */
 function buildCarryBadgeHtml(originalDate, cls = 'carry-badge') {
-  const datePart = originalDate ? ` [${originalDate}]` : '';
-  return `<span class="${cls}" style="background:#fff7ed;color:#9a3412;border-color:#fed7aa;">⚠️ 未完了繰越${datePart}</span>`;
+  return `<span class="${cls}" style="background:#fff7ed;color:#9a3412;border-color:#fed7aa;">⚠️ 未完了</span>`;
 }
 
 /**
@@ -358,7 +358,7 @@ function renderMergedSchedule(containerId){
     html += `</tbody></table></div></details>`;
   }
   // （旧）下部の「範囲を追加していくと自動で延びます」は誤りだったため削除。上部の注意書きに統合。
-  html += `<div class="hint" style="margin-top:8px;">※過去日のスケジュールは非表示です。未達成の新規項目は「今日」に繰り上げられ、それに伴う復習日も自動で再計算されます。4日目以降は「残りのスケジュール」を開いて確認できます。復習の完了は、スケジュールタブの「今日の進捗を入力」で記録します。</div>`;
+  html += `<div class="hint" style="margin-top:8px;">※過去日のスケジュールは非表示です。未達成の新規項目は「今日」に繰り上げられ、それに伴う復習日も自動で再計算されます。4日目以降は「残りのスケジュール」を開いて確認できます。復習の完了は、スケジュールタブの「今日のタスク」で記録します。</div>`;
   area.innerHTML = html;
 }
 
@@ -486,21 +486,19 @@ function renderIntegratedSchedule() {
       progressSectionHtml = html || '';
     }
 
-    const hasCFWords  = i === 0 && dayWords.some(w => w.carriedForward);
-    const hasCFBooks  = i === 0 && dayBooks.some(b => b.carriedForward);
-    const hasCNWords  = i === 0 && dayWords.some(w => w.isCarriedNew);
-    const hasCNBooks  = i === 0 && dayBooks.some(b => b.isCarriedNew); // ★参考書の isCarriedNew も繰越バナー対象
-    const carryForwardBanner = (hasCFWords || hasCFBooks || hasCNWords || hasCNBooks)
-      ? `<div style="margin-bottom:8px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;font-size:.78rem;color:#9a3412;font-weight:600;">
-           ⚠️ 過去の未達成スケジュールが繰り越されています。
-         </div>`
-      : '';
+    // 【変更】「過去の未達成スケジュールが繰り越されています」のバナーは廃止（各タスクの「未完了」バッジで足りるため）。
+    // 【変更】今日のカードは、進捗入力パネルに全タスク（新規・復習）が載っているため、
+    //   上のタスク一覧と下の入力欄に分けず、入力欄つきの1つの一覧にまとめて一度に表示する。
+    //   （入力パネルを作れなかった場合のみ、従来どおりタスク一覧を表示する）
+    const taskListHtml = progressSectionHtml
+      ? ''
+      : `<div style="padding-top: 4px;">${taskHtml}</div>`;
 
     dayCard.innerHTML = `
       <div style="font-weight: bold; font-size: 0.9rem; color: #555; border-bottom: 1px dashed #eee; padding-bottom: 4px;">
         ${mm}/${dd} (${dayOfWeek})${i === 0 ? ' <span style="display:inline-block;font-size:.7rem;background:var(--ink);color:#fff;border-radius:4px;padding:1px 6px;margin-left:4px;">今日</span>' : ''}
       </div>
-      <div style="padding-top: 4px;">${carryForwardBanner}${taskHtml}</div>
+      ${taskListHtml}
       ${progressSectionHtml}
     `;
 
@@ -1062,7 +1060,7 @@ function buildReviewProgressItems(reviews, type, unit, dividerLabel, dateStr, ex
  * @param {string} cfg.ownerAttrName     - data属性名（'origin-entry-id' | 'plan-id'）
  * @param {function} cfg.getOwnerId      - chunk → ownerID（entryId or planId）
  * @param {function} cfg.getBookName     - chunk → 表示用の教材名（初期値の扱いが単語/参考書で異なる）
- * @param {boolean} cfg.showCarryBadge   - 未完了繰越バッジを表示するか（単語チャンクでは非表示）
+ * @param {boolean} cfg.showCarryBadge   - 「未完了」バッジを表示するか（単語・参考書とも true）
  * @param {Array}  existingRecords       - 当日の既存進捗レコード
  * @param {string} dateStr               - 対象日付 (YYYY-MM-DD)
  */
@@ -1142,7 +1140,7 @@ function buildProgressInputSection(dateStr, dayWords, dayBooks, baseId, dayWordR
       ownerAttrName: 'origin-entry-id',
       getOwnerId: c => c.entryId,
       getBookName: c => c.bookName || '単語',
-      showCarryBadge: false
+      showCarryBadge: true
     }, existingRecords, dateStr);
   });
 
@@ -1159,8 +1157,8 @@ function buildProgressInputSection(dateStr, dayWords, dayBooks, baseId, dayWordR
   });
 
   // ── 復習：単語・参考書（共通ヘルパーで処理） ────────────────
-  itemsHtml += buildReviewProgressItems(dayWordReviews, 'word-review', '個',   '🔁 復習タスク（単語）の進捗',   dateStr, existingRecords);
-  itemsHtml += buildReviewProgressItems(dayBookReviews, 'book-review', 'ページ', '📚 復習タスク（参考書）の進捗', dateStr, existingRecords);
+  itemsHtml += buildReviewProgressItems(dayWordReviews, 'word-review', '個',   '🔁 復習タスク（単語）',   dateStr, existingRecords);
+  itemsHtml += buildReviewProgressItems(dayBookReviews, 'book-review', 'ページ', '📚 復習タスク（参考書）', dateStr, existingRecords);
 
   // 新規・復習ともにタスクがなければ null を返す
   if (!itemsHtml) return null;
@@ -1172,7 +1170,7 @@ function buildProgressInputSection(dateStr, dayWords, dayBooks, baseId, dayWordR
   return `
     <div class="progress-section" id="progress-section-${baseId}">
       <div class="progress-section-title">
-        📝 今日の進捗を入力
+        📝 今日のタスク（完了したら進捗を入力）
         ${savedLabel}
       </div>
       ${itemsHtml}
@@ -1869,7 +1867,7 @@ function renderRefTodayCard() {
       </div>`;
     }).join('');
     reviewList.innerHTML = `<div class="due-list" style="gap:10px;">${itemsHtml}</div>
-      <div class="hint" style="margin-top:8px;">復習の記録は「スケジュール」タブの「今日の進捗を入力」で行います。
+      <div class="hint" style="margin-top:8px;">復習の記録は「スケジュール」タブの「今日のタスク」で行います。
         <button type="button" class="btn-ghost ref-go-schedule-btn" style="font-size:.78rem;padding:4px 10px;">スケジュールタブを開く</button>
       </div>`;
     reviewList.querySelector('.ref-go-schedule-btn')?.addEventListener('click', () => showTab('schedule'));
