@@ -1528,3 +1528,8 @@
   .prog-btn .pb-t { display: none; }
   .prog-partial-panel, .prog-extra-panel { grid-column: 1 / -1; margin-top: 2px; }
 }
+/* 途中まで分割された復習の目印：モバイルの1行入力では「元 11/02」を省略 */
+@media (max-width: 640px) {
+  .progress-plan-label .split-badge { flex: 0 0 auto; padding: 1px 4px !important; font-size: .68rem !important; }
+  .progress-plan-label .rem-t { display: none; }
+}
