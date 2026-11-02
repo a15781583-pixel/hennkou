@@ -378,14 +378,19 @@ function splitPartialReviews(reviews) {
       const P = partials.sort((a, b) => b.date.localeCompare(a.date) || b.actualEnd - a.actualEnd)[0];
       const reached = P.actualEnd;
       // 実施した分：完了として、記録した日（早めに行った場合は本来の予定日）に表示する
-      out.push({ ...cur, rangeEnd: reached, key: `${baseKey}~d`,
-        date: P.date > cur.originalDate ? P.date : cur.originalDate,
-        delayedDays: 0, done: true, partialDone: true });
       // 残り：記録日の翌日が期限
       const dueIso = formatISO(addDays(parseISO(P.date), 1));
+      // 実施した分：完了として、記録した日（早めに行った場合は本来の予定日）に表示する。
+      // remainderRange / remainderDue は「残りはいつ・どの範囲か」を画面に出すためのラベル用情報
+      out.push({ ...cur, rangeEnd: reached, key: `${baseKey}~d`,
+        date: P.date > cur.originalDate ? P.date : cur.originalDate,
+        delayedDays: 0, done: true, partialDone: true,
+        remainderRange: [reached + 1, cur.rangeEnd], remainderDue: dueIso });
       const remKey = `${baseKey}~r${reached + 1}`;
       const eff = computeEffectiveReviewDate(dueIso, remKey);
+      // rootOriginalDate: 最初に予定されていた復習日（残りに「元の期限」を表示するためのラベル用）
       cur = { ...cur, rangeStart: reached + 1, key: eff.movedKey ?? remKey,
+        rootOriginalDate: cur.rootOriginalDate || cur.originalDate,
         originalDate: dueIso, date: eff.date, delayedDays: eff.delayedDays, done: eff.done, isRemainder: true };
     }
     out.push(cur);
