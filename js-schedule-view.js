@@ -25,9 +25,9 @@ function getIntervalTier(interval) {
 const INTERVAL_TIER_STYLES = [
   null,
   { label: 'Lv.1 初期',   legendDays: '1日後'   },
-  { label: 'Lv.2 定着',   legendDays: '3日後'   },
-  { label: 'Lv.3 強化',   legendDays: '7日後'   },
-  { label: 'Lv.4 仕上げ', legendDays: '14日後〜' },
+  { label: 'Lv.2 定着',   legendDays: '2〜3日後' },
+  { label: 'Lv.3 強化',   legendDays: '5〜7日後' },
+  { label: 'Lv.4 仕上げ', legendDays: '10日後〜' },
 ];
 function getIntervalTierStyle(tier) {
   return INTERVAL_TIER_STYLES[tier] || { label: '', legendDays: '' };
@@ -95,6 +95,30 @@ function buildDayTaskItemHtml(item, kind) {
 }
 
 /**
+ * 「途中まで」で分割された復習の目印バッジ。
+ *  ・残り（isRemainder）   : 「↪ 残り（元 11/02）」… 前回の途中入力の続きであることと、元の期限日を示す
+ *  ・実施分（partialDone） : 「途中まで済」… この範囲は実施済みで、残りは別タスクになっていることを示す
+ */
+function buildSplitBadgeHtml(r) {
+  const md = iso => { const d = parseISO(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
+  const base = 'display:inline-flex;align-items:center;border-radius:4px;padding:1px 6px;font-size:.68rem;font-weight:700;white-space:nowrap;';
+  if (r.isRemainder) {
+    const from = r.rootOriginalDate ? `<span class="rem-t">（元 ${md(r.rootOriginalDate)}）</span>` : '';
+    return `<span class="split-badge" style="${base}background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;">↪ 残り${from}</span>`;
+  }
+  if (r.partialDone) {
+    return `<span class="split-badge" style="${base}background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;">途中まで済</span>`;
+  }
+  return '';
+}
+// 実施分の行に添える「残りはいつ・どの範囲か」の説明（例：→ 残り 10〜30 は 11/03 へ）
+function buildSplitNoteHtml(r) {
+  if (!r.partialDone || !r.remainderRange) return '';
+  const d = parseISO(r.remainderDue);
+  return `<span style="color:#9a3412;font-size:.72rem;font-weight:600;">→ 残り ${r.remainderRange[0]}〜${r.remainderRange[1]} は ${d.getMonth() + 1}/${d.getDate()} へ</span>`;
+}
+
+/**
  * 統合スケジュール（buildDayCard）の「復習タスク1件」分のHTMLを返す（単語・参考書共通）。
  * 単語復習のみ bookName 未設定時に「単語」とフォールバック表示する点が唯一の差分。
  * @param {object} r - 復習項目。interval/delayedDays/done/key/bookName/rangeStart/rangeEnd を参照
@@ -104,7 +128,7 @@ function buildDayReviewItemHtml(r, kind) {
   const tier = getIntervalTier(r.interval);
   const reviewBadge = buildReviewBadgeHtml(r.interval, r.delayedDays);
   const displayName = kind === 'word' ? (r.bookName || '単語') : r.bookName;
-  return `<div style="margin-top:6px;max-width:100%;overflow:hidden;"><label class="tag-review-t${tier}" style="cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 9px;border-radius:6px;${r.done ? 'opacity:.5;text-decoration:line-through;' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''} style="margin:0;flex-shrink:0;">${reviewBadge}<span style="color:#333;font-size:.8rem;word-break:break-all;">${escapeHtml(displayName)} ${r.rangeStart}〜${r.rangeEnd}</span></label></div>`;
+  return `<div style="margin-top:6px;max-width:100%;overflow:hidden;"><label class="tag-review-t${tier}" style="cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 9px;border-radius:6px;${r.done ? 'opacity:.5;text-decoration:line-through;' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''} style="margin:0;flex-shrink:0;">${reviewBadge}${buildSplitBadgeHtml(r)}<span style="color:#333;font-size:.8rem;word-break:break-all;">${escapeHtml(displayName)} ${r.rangeStart}〜${r.rangeEnd}</span>${buildSplitNoteHtml(r)}</label></div>`;
 }
 // ──────────────────────────────────────────────────────────────
 
@@ -984,7 +1008,7 @@ function buildReviewProgressItems(pendingReviews, type, unit, dividerLabel, date
       ? `data-review-key="${r.key}" data-type="${type}" data-planned-start="${r.rangeStart}" data-planned-end="${r.rangeEnd}" data-date="${dateStr}" data-book-name="${escapeHtml(r.bookName || '単語')}"`
       : `data-review-key="${r.key}" data-type="${type}" data-planned-start="${r.rangeStart}" data-planned-end="${r.rangeEnd}" data-date="${dateStr}" data-book-name="${escapeHtml(r.bookName)}"`;
     html += `<div class="progress-item review-item t${tier}"${rec ? ' data-recorded="1"' : ''}>
-      <span class="progress-plan-label">${badge} ${nameLabel}</span>
+      <span class="progress-plan-label">${badge}${buildSplitBadgeHtml(r)} ${nameLabel}</span>
       ${buildProgControlHtml(r.rangeStart, r.rangeEnd, rv, type, dataAttrs)}
     </div>`;
   });
