@@ -67,10 +67,10 @@ function buildReviewBadgeHtml(interval, delayedDays, layout = 'inline') {
   const tier = getIntervalTier(interval);
   // 🔁 復習 Lv.X [N日後]
   // 色は css-style.css の .tag-review-t{tier} を流用（JS側でのハードコード二重管理を回避）
-  const mainBadge = `<span class="tag-review-t${tier}" style="display:inline-flex;align-items:center;gap:3px;border-radius:4px;padding:1px 6px;font-size:.68rem;font-weight:700;white-space:nowrap;">🔁 復習 Lv.${tier} [${interval}日後]</span>`;
+  const mainBadge = `<span class="tag-review-t${tier}" style="display:inline-flex;align-items:center;gap:3px;border-radius:4px;padding:1px 6px;font-size:.68rem;font-weight:700;white-space:nowrap;"><span class="rb-ic">🔁</span><span class="rb-lv"> 復習 Lv.${tier}</span> [${interval}日後]</span>`;
   // 🔄 [遅れN日]（遅れがある場合のみ）
   const delayBadge = delayedDays > 0
-    ? `<span style="display:inline-flex;align-items:center;background:#b23a2e;color:#fff;border-radius:4px;padding:1px 6px;font-size:.68rem;font-weight:700;white-space:nowrap;">🔄 [遅れ${delayedDays}日]</span>`
+    ? `<span style="display:inline-flex;align-items:center;background:#b23a2e;color:#fff;border-radius:4px;padding:1px 6px;font-size:.68rem;font-weight:700;white-space:nowrap;">🔄<span class="rb-late-t"> [遅れ</span>${delayedDays}<span class="rb-late-t">日]</span></span>`
     : '';
   return `${mainBadge}${delayBadge ? ' ' + delayBadge : ''}`;
 }
@@ -161,6 +161,14 @@ function recordReviewProgress({ reviewKey, type, dateStr, plannedStart, plannedE
 // 「途中まで」「進んでいない」の記録は完了ではないので残す（週のまとめの集計に使われるため）。
 function clearReviewCompletion(reviewKey){
   const baseKey = getReviewBaseKey(reviewKey);
+  // 「途中まで」の実施済み部分（キー末尾 ~d）を外した場合は、途中まで記録そのもの（と、その残りへの記録）を取り消して元の1件に戻す
+  if (baseKey.endsWith('~d')) {
+    const root = baseKey.slice(0, -2);
+    const isMine = k => k === root || k.startsWith(root + '~r');
+    dailyProgress = dailyProgress.filter(p => !(isReviewProgressRecord(p) && p.reviewKey && isMine(getReviewBaseKey(p.reviewKey))));
+    Array.from(reviewDoneSet).forEach(k => { if (isMine(k)) reviewDoneSet.delete(k); });
+    return;
+  }
   reviewDoneSet.delete(baseKey);
   dailyProgress = dailyProgress.filter(p => !(
     isReviewProgressRecord(p) && p.reviewKey && getReviewBaseKey(p.reviewKey) === baseKey &&
@@ -913,15 +921,9 @@ function buildProgControlHtml(rangeStart, rangeEnd, recordedVal, type, inputAttr
              min="${rangeStart - 1}" max="${rangeEnd + 50}"
              value="${recordedVal}" ${inputAttrs}>
       <div class="prog-toggle">
-        <button type="button" class="prog-btn prog-btn-done${isDone ? ' prog-btn-active' : ''}">
-          ✅ 完了
-        </button>
-        <button type="button" class="prog-btn prog-btn-partial${isPartial ? ' prog-btn-active' : ''}">
-          ⚠️ 途中まで
-        </button>
-        <button type="button" class="prog-btn prog-btn-not-progressed${isNotProgressed ? ' prog-btn-active' : ''}">
-          🚫 進んでいない
-        </button>
+        <button type="button" class="prog-btn prog-btn-done${isDone ? ' prog-btn-active' : ''}" aria-label="完了">✅<span class="pb-t"> 完了</span></button>
+        <button type="button" class="prog-btn prog-btn-partial${isPartial ? ' prog-btn-active' : ''}" aria-label="途中まで">⚠️<span class="pb-t"> 途中まで</span></button>
+        <button type="button" class="prog-btn prog-btn-not-progressed${isNotProgressed ? ' prog-btn-active' : ''}" aria-label="進んでいない">🚫<span class="pb-t"> 進んでいない</span></button>
       </div>
       <div class="prog-partial-panel"${isPartial ? '' : ' style="display:none"'}>
         <div class="prog-count-row">
@@ -964,16 +966,19 @@ function buildProgControlHtml(rangeStart, rangeEnd, recordedVal, type, inputAttr
 function buildReviewProgressItems(pendingReviews, type, unit, dividerLabel, dateStr, existingRecords) {
   if (!pendingReviews.length) return '';
   // 見出し（単語／参考書）は、両方の復習がある場合だけ表示する（空文字なら出さない）
-  let html = dividerLabel ? `<div class="progress-review-divider">${dividerLabel}</div>` : '';
-  pendingReviews.forEach(r => {
+  // 見出しは「教材名ごと」（モバイルで各行を1行に収めるため、行側の教材名は省略する）
+  let html = '';
+  let lastBook = null;
+  pendingReviews.slice().sort((a, b) => String(a.bookName || '').localeCompare(String(b.bookName || ''))).forEach(r => {
+    const bn = r.bookName || (type === 'word-review' ? '単語' : '');
+    if (bn !== lastBook) { html += `<div class="progress-review-divider">${escapeHtml(bn)}</div>`; lastBook = bn; }
     const tier = getIntervalTier(r.interval);
     const rec  = existingRecords.find(p => p.reviewKey === r.key && p.type === type);
     const rv   = rec ? rec.actualEnd : '';
     const pc   = r.rangeEnd - r.rangeStart + 1;
     const badge = buildReviewBadgeHtml(r.interval, r.delayedDays);
-    const nameLabel = type === 'word-review'
-      ? `${escapeHtml(r.bookName || '単語')} ${r.rangeStart}〜${r.rangeEnd}（${pc}個）`
-      : `${escapeHtml(r.bookName)} ${r.rangeStart}〜${r.rangeEnd}（${pc}ページ）`;
+    const nm = escapeHtml(type === 'word-review' ? (r.bookName || '単語') : r.bookName);
+    const nameLabel = `<span class="pl-name pl-name-review">${nm}</span><span class="pl-range">${r.rangeStart}〜${r.rangeEnd}</span><span class="pl-count">（${pc}${type === 'word-review' ? '個' : 'ページ'}）</span>`;
     // ★ 単語・参考書で設計を共通化：どちらの種別も data-book-name を付与する
     const dataAttrs = type === 'word-review'
       ? `data-review-key="${r.key}" data-type="${type}" data-planned-start="${r.rangeStart}" data-planned-end="${r.rangeEnd}" data-date="${dateStr}" data-book-name="${escapeHtml(r.bookName || '単語')}"`
@@ -1027,7 +1032,7 @@ function buildNewChunkProgressItemHtml(chunk, cfg, existingRecords, dateStr) {
 
   return `
       <div class="progress-item"${rec ? ' data-recorded="1"' : ''}>
-        <span class="progress-plan-label">${escapeHtml(bookName)} ${chunk.rangeStart}〜${planEnd}（${plannedCount}${cfg.unit}）${cfNote}</span>
+        <span class="progress-plan-label"><span class="pl-name">${escapeHtml(bookName)}</span><span class="pl-range">${chunk.rangeStart}〜${planEnd}</span><span class="pl-count">（${plannedCount}${cfg.unit}）</span>${cfNote}</span>
         ${buildProgControlHtml(chunk.rangeStart, planEnd, recordedVal, cfg.type, dataAttrs)}
       </div>`;
 }
@@ -1369,7 +1374,7 @@ function attachProgressInputHandlers(container, dateStr, baseId) {
  */
 function previewProgressAdjustment(container, dateStr, baseId) {
   baseId = baseId || dateStr;
-  let hasAhead = false, hasBehind = false, hasNotProgressed = false, hasBehindNew = false;
+  let hasAhead = false, hasBehind = false, hasNotProgressed = false, hasBehindNew = false, hasBehindReview = false;
   let aheadMessages = [], behindMessages = [], notProgressedLabels = [];
 
   container.querySelectorAll('.progress-num-input').forEach(input => {
@@ -1399,7 +1404,7 @@ function previewProgressAdjustment(container, dateStr, baseId) {
       hasBehind = true;
       const diff = plannedEnd - val;
       behindMessages.push(`${label}: ${diff}${unit}残っています`);
-      if (!isReview) hasBehindNew = true;
+      if (!isReview) hasBehindNew = true; else hasBehindReview = true;
     }
   });
 
@@ -1420,7 +1425,8 @@ function previewProgressAdjustment(container, dateStr, baseId) {
     if (hasBehind) {
       // 「自動で分散します」の説明は、新規タスクに残りがあるときだけ、最後に1回だけ表示する
       behindNote.innerHTML = '⚠️ ' + behindMessages.map(m => escapeHtml(m)).join('<br>')
-        + (hasBehindNew ? '<br>→ 残りは以降のスケジュールに自動で分散します' : '');
+        + (hasBehindNew ? '<br>→ 残りは以降のスケジュールに自動で分散します' : '')
+        + (hasBehindReview ? '<br>→ 復習の残りは、明日以降の復習タスクになります' : '');
       behindNote.style.display = 'block';
     } else {
       behindNote.style.display = 'none';
