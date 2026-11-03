@@ -54,7 +54,8 @@ function reviewLegendHTML() {
  */
 function buildCarryBadgeHtml(originalDate, cls = 'carry-badge') {
   const datePart = originalDate ? ` [${originalDate}]` : '';
-  return `<span class="${cls}" style="background:#fff7ed;color:#9a3412;border-color:#fed7aa;">⚠️ 未完了繰越${datePart}</span>`;
+  // PC：「⚠️ 未完了繰越 [日付]」／モバイル：日付を出さず「持ち越し」だけ（切替は css の .cb-full / .cb-short）
+  return `<span class="${cls}" style="background:#fff7ed;color:#9a3412;border-color:#fed7aa;"><span class="cb-full">⚠️ 未完了繰越${datePart}</span><span class="cb-short">持ち越し</span></span>`;
 }
 
 /**
@@ -70,7 +71,7 @@ function buildReviewBadgeHtml(interval, delayedDays, layout = 'inline') {
   const mainBadge = `<span class="tag-review-t${tier}" style="display:inline-flex;align-items:center;gap:3px;border-radius:4px;padding:1px 6px;font-size:.68rem;font-weight:700;white-space:nowrap;"><span class="rb-ic">🔁</span><span class="rb-lv"> 復習 Lv.${tier}</span> [${interval}日後]</span>`;
   // 🔄 [遅れN日]（遅れがある場合のみ）
   const delayBadge = delayedDays > 0
-    ? `<span style="display:inline-flex;align-items:center;background:#b23a2e;color:#fff;border-radius:4px;padding:1px 6px;font-size:.68rem;font-weight:700;white-space:nowrap;">🔄<span class="rb-late-t"> [遅れ</span>${delayedDays}<span class="rb-late-t">日]</span></span>`
+    ? `<span class="late-badge" style="display:inline-flex;align-items:center;background:#b23a2e;color:#fff;border-radius:4px;padding:1px 6px;font-size:.68rem;font-weight:700;white-space:nowrap;"><span class="lb-full">🔄<span class="rb-late-t"> [遅れ</span>${delayedDays}<span class="rb-late-t">日]</span></span><span class="lb-short">持ち越し</span></span>`
     : '';
   return `${mainBadge}${delayBadge ? ' ' + delayBadge : ''}`;
 }
@@ -450,6 +451,7 @@ function renderIntegratedSchedule() {
     const dd = String(currentLoopDate.getDate()).padStart(2, '0');
 
     const dayCard = document.createElement('div');
+    dayCard.className = 'day-card' + (i === 0 ? ' day-card-today' : ''); // 今日のカードはモバイルで最上部へ並べ替える目印
     dayCard.style.cssText = "background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); max-width: 100%; overflow: hidden; word-break: break-word;";
 
     let taskHtml = '';
@@ -507,7 +509,7 @@ function renderIntegratedSchedule() {
     const hasCNWords  = i === 0 && dayWords.some(w => w.isCarriedNew);
     const hasCNBooks  = i === 0 && dayBooks.some(b => b.isCarriedNew); // ★参考書の isCarriedNew も繰越バナー対象
     const carryForwardBanner = (hasCFWords || hasCNWords)
-      ? `<div style="margin-bottom:8px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;font-size:.78rem;color:#9a3412;font-weight:600;">
+      ? `<div class="carry-banner" style="margin-bottom:8px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;font-size:.78rem;color:#9a3412;font-weight:600;">
            ⚠️ 過去の未達成スケジュールが繰り越されています。
          </div>`
       : '';
