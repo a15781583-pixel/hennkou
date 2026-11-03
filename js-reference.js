@@ -84,9 +84,8 @@ onDomReady(() => {
             document.getElementById('refEndPage').value = '';
           }
 
-          // 登録完了後：設定アコーディオンを閉じて「今日の確認」に注目させる
-          const settingDetails = document.getElementById('refSettingDetails');
-          if (settingDetails) settingDetails.open = false;
+          // 登録完了後も「参考書を登録」の折り畳みは開いたままにする（続けて次の参考書を登録できるように）。
+          // 閉じる／開くは生徒が見出しをタップして自分で切り替える。
         },
       });
     });
