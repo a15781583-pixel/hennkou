@@ -175,10 +175,8 @@ function loadRefEntries() {
   refEntries = loadFromStorage(REF_STORAGE_KEY);
   if (refEntries.length > 0) {
     renderRefSchedule(); // 読み込み後すぐに描画
-    // 既にスケジュールが登録されている場合：設定アコーディオンを初期状態で閉じる
-    // （「今日の確認」エリアを最初に見せることでUXを改善）
-    const settingDetails = document.getElementById('refSettingDetails');
-    if (settingDetails) settingDetails.open = false;
+    // 「参考書を登録」の折り畳みは、登録済みの参考書があっても開いたままにする
+    // （生徒が続けて登録できるように。閉じる／開くは生徒が見出しで切り替える）
   }
 }
 
