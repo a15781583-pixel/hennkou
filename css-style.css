@@ -1533,3 +1533,46 @@
   .progress-plan-label .split-badge { flex: 0 0 auto; padding: 1px 4px !important; font-size: .68rem !important; }
   .progress-plan-label .rem-t { display: none; }
 }
+
+/* ════════════════════════════════════════════════
+   スケジュールタブ：モバイルは「今日の進捗入力」に集中できる表示にする
+   （このブロックは必ずファイル末尾に置く）
+════════════════════════════════════════════════ */
+/* PC：折り畳みの見出しは出さず（常に開いたまま）、短い「持ち越し」表記も出さない */
+.mobile-fold > summary { display: none; }
+.late-badge .lb-short, .carry-badge .cb-short { display: none; }
+
+@media (max-width: 640px) {
+  /* 並び順：①今日のカード ②完了案内 ③目標・まとめ ④期間切替 ⑤今後のスケジュール */
+  .schedule-flow { display: flex; flex-direction: column; gap: 10px; }
+  .schedule-flow > h3.sub-head { display: none; }
+  #integratedScheduleList { display: contents !important; }
+  #integratedScheduleList > .review-legend { display: none; }   /* 復習ステップの凡例は非表示 */
+  #integratedScheduleList > .day-card-today { order: 1; }
+  #completionPromptArea { order: 2; }
+  #completionPromptArea:empty { display: none; }
+  #integratedScheduleList > :not(.day-card-today):not(#integratedScheduleFuture):not(.review-legend) { order: 2; }
+  #mobileSummaryFold { order: 3; }
+  #schedulePeriodRow { order: 4; margin-bottom: 0 !important; }
+  #integratedScheduleList > #integratedScheduleFuture { order: 5; margin-top: 0; }
+  .schedule-flow > * { margin-top: 0; }
+
+  /* 目標・今週のまとめの折り畳み（見出しをタップで開閉） */
+  details.mobile-fold { border: 1px solid var(--paper-line); border-radius: 8px; background: var(--paper); padding: 8px 12px; }
+  details.mobile-fold > summary {
+    display: block; cursor: pointer; font-size: .85rem; color: var(--ink-soft);
+    font-weight: 600; padding: 4px 0; list-style: none;
+  }
+  details.mobile-fold > summary::-webkit-details-marker { display: none; }
+  details.mobile-fold > summary::before { content: "▸ "; }
+  details.mobile-fold[open] > summary::before { content: "▾ "; }
+  details.mobile-fold[open] > summary { margin-bottom: 8px; }
+  details.mobile-fold .month-goal-card { margin-bottom: 10px; }
+  details.mobile-fold .weekly-summary-card { margin-bottom: 0; }
+
+  /* 遅れ・繰越の表示：日数や日付は出さず、控えめな「持ち越し」の印だけにする */
+  .carry-banner { display: none; }
+  .late-badge .lb-full, .carry-badge .cb-full { display: none; }
+  .late-badge .lb-short, .carry-badge .cb-short { display: inline; }
+  .late-badge { background: #fff7ed !important; color: #9a3412 !important; border: 1px solid #fed7aa; }
+}
