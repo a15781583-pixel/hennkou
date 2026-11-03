@@ -118,6 +118,16 @@ function buildSplitNoteHtml(r) {
   return `<span style="color:#9a3412;font-size:.72rem;font-weight:600;">→ 残り ${r.remainderRange[0]}〜${r.remainderRange[1]} は ${d.getMonth() + 1}/${d.getDate()} へ</span>`;
 }
 
+// 【追加】予定日がまだ来ていない（明日以降）未完了の復習は、チェックできないようにする。
+// 先にチェックすると、復習キーが学習範囲の再配分・進捗入力で変わって完了状態がずれたり、
+// 未学習の範囲が「完了」扱いのまま残ったりするため。完了済みのものは取り消せるよう有効のままにする。
+function isFutureUndoneReview(r){
+  return !r.done && String(r.date).slice(0, 10) > todayISO();
+}
+function futureLockAttr(r){
+  return isFutureUndoneReview(r) ? ' disabled title="予定日になったらチェックできます"' : '';
+}
+
 /**
  * 統合スケジュール（buildDayCard）の「復習タスク1件」分のHTMLを返す（単語・参考書共通）。
  * 単語復習のみ bookName 未設定時に「単語」とフォールバック表示する点が唯一の差分。
@@ -128,7 +138,7 @@ function buildDayReviewItemHtml(r, kind) {
   const tier = getIntervalTier(r.interval);
   const reviewBadge = buildReviewBadgeHtml(r.interval, r.delayedDays);
   const displayName = kind === 'word' ? (r.bookName || '単語') : r.bookName;
-  return `<div style="margin-top:6px;max-width:100%;overflow:hidden;"><label class="tag-review-t${tier}" style="cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 9px;border-radius:6px;${r.done ? 'opacity:.5;text-decoration:line-through;' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''} style="margin:0;flex-shrink:0;">${reviewBadge}${buildSplitBadgeHtml(r)}<span style="color:#333;font-size:.8rem;word-break:break-all;">${escapeHtml(displayName)} ${r.rangeStart}〜${r.rangeEnd}</span>${buildSplitNoteHtml(r)}</label></div>`;
+  return `<div style="margin-top:6px;max-width:100%;overflow:hidden;"><label class="tag-review-t${tier}" style="cursor:${isFutureUndoneReview(r) ? 'default' : 'pointer'};display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 9px;border-radius:6px;${r.done ? 'opacity:.5;text-decoration:line-through;' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''}${futureLockAttr(r)} style="margin:0;flex-shrink:0;">${reviewBadge}${buildSplitBadgeHtml(r)}<span style="color:#333;font-size:.8rem;word-break:break-all;">${escapeHtml(displayName)} ${r.rangeStart}〜${r.rangeEnd}</span>${buildSplitNoteHtml(r)}</label></div>`;
 }
 // ──────────────────────────────────────────────────────────────
 
@@ -208,9 +218,12 @@ function attachReviewCheckHandlers(container){
   if(!container) return;
   container.querySelectorAll('.review-check').forEach(cb => {
     cb.addEventListener('change', () => {
+      if(cb.disabled) return;
       const key = cb.dataset.key;
       if(cb.checked){
         const found = findScheduledReviewByKey(key);
+        // 【追加】念のための二重ガード：予定日前の未完了の復習は記録しない（チェックを元に戻す）
+        if(found && isFutureUndoneReview(found.review)){ cb.checked = false; return; }
         if(found){
           const r = found.review;
           recordReviewProgress({
@@ -317,7 +330,7 @@ function renderMergedSchedule(containerId){
       <td>${row.reviewItems.map(r => {
         // STEP 8: 復習バッジを統一形式で表示（🔁 復習 Lv.X [N日後] + 🔄 [遅れN日]）
         const reviewBadge = buildReviewBadgeHtml(r.interval, r.delayedDays);
-        return `<label class="tag tag-review tag-review-t${getIntervalTier(r.interval)} review-check-label${r.done ? ' is-done' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''}><span class="stamp">◎</span>${reviewBadge} ${escapeHtml(r.bookName || '単語')} ${r.rangeStart}〜${r.rangeEnd}</label>`;
+        return `<label class="tag tag-review tag-review-t${getIntervalTier(r.interval)} review-check-label${r.done ? ' is-done' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''}${futureLockAttr(r)}><span class="stamp">◎</span>${reviewBadge} ${escapeHtml(r.bookName || '単語')} ${r.rangeStart}〜${r.rangeEnd}</label>`;
       }).join('') || '—'}</td>
       <td>${row.refItems.map(c => {
         // STEP 8: 参考書の未完了繰越バッジを統一形式で表示（carriedForward / isCarriedNew 両対応）
@@ -328,7 +341,7 @@ function renderMergedSchedule(containerId){
       <td>${row.refReviewItems.map(r => {
         // STEP 8: 参考書復習バッジを統一形式で表示
         const reviewBadge = buildReviewBadgeHtml(r.interval, r.delayedDays);
-        return `<label class="tag tag-ref-review tag-review-t${getIntervalTier(r.interval)} review-check-label${r.done ? ' is-done' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''}><span class="stamp">◎</span>${reviewBadge} ${escapeHtml(r.bookName)} ${r.rangeStart}〜${r.rangeEnd}</label>`;
+        return `<label class="tag tag-ref-review tag-review-t${getIntervalTier(r.interval)} review-check-label${r.done ? ' is-done' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''}${futureLockAttr(r)}><span class="stamp">◎</span>${reviewBadge} ${escapeHtml(r.bookName)} ${r.rangeStart}〜${r.rangeEnd}</label>`;
       }).join('') || '—'}</td>
     </tr>`;
   }
