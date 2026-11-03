@@ -19,7 +19,7 @@ const MONTH_GOAL_KEY = 'vocab-month-goal'; // 今月の目標
 const WEEKDAYS = ['日','月','火','水','木','金','土'];
 // 復習キーの「日付移動済みサフィックス」を検出・除去するための共通正規表現（例: xxx_moved_2026-01-01）
 const MOVED_KEY_SUFFIX_RE = /_moved_\d{4}-\d{2}-\d{2}$/;
-const DEFAULT_WEEKDAYS = [1,2,3,4,5,6];
+const DEFAULT_WEEKDAYS = [0,1,2,3,4,5,6]; // 日曜も含めた毎日（初期値は7日間。登録時に生徒が外せる）
 const DEFAULT_INTERVALS = [1,3,7,14];
 const LEECH_WARN_THRESHOLD = 2;
 const COLORS = { ink:'#1E2A44', gold:'#a97c1f', red:'#B23A2E', success:'#3a6b4c', grid:'#CBD5E3' };
