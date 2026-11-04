@@ -399,6 +399,58 @@ function splitPartialReviews(reviews) {
 }
 
 /**
+ * 同じ範囲（同じ出どころ）の復習が、同じ日に重ならないように調整する（単語・参考書共通）。
+ *
+ * 背景：遅れた復習は「今日」へ移動し、途中まで入力した復習の残りは「翌日」が期限になる。
+ *       そのため、同じ範囲の次の復習（例：3日後）の予定日とぶつかり、
+ *       別の復習ステップのタスクが同じ日に重なって表示されていた。
+ *
+ * ルール（元の復習間隔を保つ）：
+ *  ・遅れていない復習・完了済みの復習は、元の予定日のまま動かさない（＝元の間隔を保つ）。
+ *  ・「遅れた復習」と「途中まで入力した残り」だけを動かす。
+ *    同じ出どころの未完了の復習がすでにある日は避け、次の日以降の空いている日へ送る。
+ *  ・originalDate（本来の予定日）は変えない。週のまとめの集計などは originalDate を見るため影響しない。
+ */
+function reviewSourceKeyOf(r) {
+  // 例: w_e1_1_20_3 / w_e1_1_20_3_moved_2026-11-05 / w_e1_1_20_3~r11 → w_e1_1_20
+  return String(r.key)
+    .replace(MOVED_KEY_SUFFIX_RE, '')
+    .replace(/~(?:d|r\d+)$/, '')
+    .replace(/_\d+$/, '');
+}
+
+function separateSameSourceReviews(reviews) {
+  const dayOf = r => String(r.date).slice(0, 10);
+  const groups = new Map();
+  reviews.forEach(r => {
+    const k = reviewSourceKeyOf(r);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  });
+
+  const replaced = new Map(); // 元の review オブジェクト → 日付を送った新オブジェクト
+  groups.forEach(list => {
+    if (list.length < 2) return;
+    const isMovable = r => !r.done && (r.delayedDays > 0 || r.isRemainder);
+    // 動かさない未完了の復習が使っている日
+    const occupied = new Set(list.filter(r => !r.done && !isMovable(r)).map(dayOf));
+    // 動かす復習は、ステップの浅い順（1日後 → 3日後 …）、同じなら範囲の若い順に置く
+    list.filter(isMovable)
+      .sort((a, b) => a.interval - b.interval || a.rangeStart - b.rangeStart)
+      .forEach(r => {
+        let d = dayOf(r);
+        let guard = 0;
+        while (occupied.has(d) && guard++ < 400) d = formatISO(addDays(parseISO(d), 1));
+        occupied.add(d);
+        if (d === dayOf(r)) return;
+        const lateDays = Math.round((parseISO(d) - parseISO(String(r.originalDate).slice(0, 10))) / 86400000);
+        replaced.set(r, { ...r, date: d, delayedDays: Math.max(r.delayedDays || 0, lateDays) });
+      });
+  });
+  return reviews.map(r => replaced.get(r) || r);
+}
+
+/**
  * スケジュール描画用の共通データ（チャンク・繰り上げ・復習調整済み）をまとめて返す。
  */
 function buildScheduleData() {
@@ -408,6 +460,9 @@ function buildScheduleData() {
   // 復習の「途中まで」を、実施した分（完了）と残り（翌日以降のタスク）に分ける
   adjusted.vocabReviews = splitPartialReviews(adjusted.vocabReviews);
   adjusted.refReviews = splitPartialReviews(adjusted.refReviews);
+  // 同じ範囲の復習が同じ日に重なる場合、遅れた分・残りの分だけを次の日以降へ送る（元の復習間隔は保つ）
+  adjusted.vocabReviews = separateSameSourceReviews(adjusted.vocabReviews);
+  adjusted.refReviews = separateSameSourceReviews(adjusted.refReviews);
   return {
     rawVocabChunks,
     rawRefChunks,
