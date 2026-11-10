@@ -39,7 +39,7 @@ function computeEffectiveReviewDate(originalIso, key){
   // ★【バグ3修正】p.date <= originalIso フィルターを追加。
   //    moved 完了後の残存レコード（p.date > originalIso）が、同一 base key を持つ
   //    別サイクルの復習を誤って「完了済み」と判定するのを防ぐ。
-  //    moved 完了は line 1735 の reviewDoneSet.add(baseKey) で確実に記録されるため、
+  //    moved 完了は recordReviewProgress 内の reviewDoneSet.add(baseKey) で確実に記録されるため、
   //    isDoneInPanel は originalIso 以前のレコードのみ対象とすれば十分。
   // 完了を示す進捗記録（パネル／チェックボックス共通）。移動済みキー(_moved_)も元キーに戻して照合する
   const isDoneRecord = p =>
@@ -157,7 +157,7 @@ function buildProgressReviews(progressItems, prefix, getResolved, getEntity, get
 }
 
 // 単語・参考書の全復習項目（本来の日付＋ずらし後の実効日付）をまとめて計算する共通関数。
-// renderMergedSchedule / renderIntegratedSchedule の両方から呼ばれる。
+// buildScheduleData 経由で renderIntegratedSchedule などから呼ばれる。
 // ★ 進捗記録がある場合は computeAdjustedChunksForEntry / computeAdjustedRefSchedule を使い
 //   残りのスケジュールを自動再配分する。
 function buildAllReviews(){
