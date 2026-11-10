@@ -241,155 +241,12 @@ function attachReviewCheckHandlers(container){
       }
       saveReviewDone();
       saveDailyProgress();
-      refreshAllSchedules();
       renderIntegratedSchedule();
-      renderRefTodayCard(); // 参考書「今日やること」カードを同期更新
     });
   });
 }
 
 /* ───────── スケジュール表／月目標／今週のまとめ／今日やること／進捗入力 ───────── */
-// 単語スケジュールと参考書スケジュールをまとめて1つのカレンダーとして描画する共通関数
-// 「単語タブ」の #scheduleArea に描画する（参考書タブは renderRefTodayCard で管理）
-function renderMergedSchedule(containerId){
-  const area = document.getElementById(containerId);
-  if(!area) return;
-
-  const { vocabChunks, refChunks, vocabReviews, refReviews } = buildScheduleData();
-
-  if(entries.length === 0 && refEntries.length === 0){
-    area.innerHTML = `<div class="empty-state">まだ単語範囲・参考書が登録されていません。上のフォームから追加してください。</div>`;
-    return;
-  }
-  if(vocabChunks.length === 0 && refChunks.length === 0){
-    area.innerHTML = `<div class="empty-state">学習曜日が選択されていない範囲があります。設定を確認してください。</div>`;
-    return;
-  }
-
-  // ── 過去の未達成チャンクは buildScheduleData 内で繰り上げ済み ──
-
-  const today = new Date(); today.setHours(0,0,0,0);
-  // 表示は「今日」以降のみ（過去日は非表示）
-  let minDate = new Date(today);
-  const futureDates = [
-    ...vocabChunks.filter(c => parseISO(c.date) >= today).map(c => parseISO(c.date)),
-    ...vocabReviews.filter(r => parseISO(r.date) >= today).map(r => parseISO(r.date)),
-    ...refChunks.filter(c => parseISO(c.date) >= today).map(c => parseISO(c.date)),
-    ...refReviews.filter(r => parseISO(r.date) >= today).map(r => parseISO(r.date)),
-    today
-  ];
-  let maxDate = new Date(Math.max(...futureDates));
-  const MAX_DAYS = 45;
-  const spanDays = Math.round((maxDate - minDate) / 86400000) + 1;
-  let truncated = false;
-  if(spanDays > MAX_DAYS){ maxDate = addDays(minDate, MAX_DAYS - 1); truncated = true; }
-
-  // 表示期間（45日）より先にある予定の件数を数えておく（データは消えていないことを利用者に伝えるため）。
-  // 日付はISO形式(YYYY-MM-DD)なので文字列比較で大小判定できる。
-  let hiddenNoticeHtml = '';
-  if(truncated){
-    const capIso = formatISO(maxDate);
-    const beyond = (arr) => arr.filter(x => x.date > capIso);
-    const beyondNew = [...beyond(vocabChunks), ...beyond(refChunks)];
-    const beyondReview = [...beyond(vocabReviews), ...beyond(refReviews)].filter(r => !r.done);
-    const nextBeyond = [...beyondNew, ...beyondReview].map(x => x.date).sort()[0];
-    const nextLabel = nextBeyond ? `（次は ${parseISO(nextBeyond).getMonth()+1}/${parseISO(nextBeyond).getDate()}）` : '';
-    hiddenNoticeHtml = buildBeyondNoticeHtml(
-      `表示は今日から${MAX_DAYS}日分（〜${maxDate.getMonth()+1}/${maxDate.getDate()}）までです。`,
-      beyondNew.length, beyondReview.length, nextLabel,
-      '予定は消えていません。日が進むと、その日が近づいた時点で自動的に表示されます。'
-    );
-  }
-
-  const rows = [];
-  let cursor = new Date(minDate);
-  while(cursor <= maxDate){
-    const iso = formatISO(cursor);
-    const newItems = vocabChunks.filter(c => c.date === iso);
-    const reviewItems = vocabReviews.filter(r => r.date === iso);
-    const refItems = refChunks.filter(c => c.date === iso);
-    const refReviewItems = refReviews.filter(r => r.date === iso);
-    if(newItems.length || reviewItems.length || refItems.length || refReviewItems.length){ rows.push({ date: new Date(cursor), iso, newItems, reviewItems, refItems, refReviewItems }); }
-    cursor = addDays(cursor, 1);
-  }
-
-  const todayIso = todayISO();
-  const INITIAL_VISIBLE_ROWS = 3;
-
-  function rowHtml(row) {
-    const isToday = row.iso === todayIso;
-    const wd = WEEKDAYS[row.date.getDay()];
-    const dateLabel = `${row.date.getMonth()+1}/${row.date.getDate()}`;
-    return `<tr class="${isToday ? 'today' : ''}">
-      <td class="date-cell">${dateLabel}<span class="wd">(${wd})</span>${isToday ? '<span class="today-badge">今日</span>' : ''}</td>
-      <td>${row.newItems.map(c => {
-        // STEP 8: 未完了繰越バッジを統一形式で表示
-        const cfBadge = c.carriedForward ? buildCarryBadgeHtml(c.originalDate) : '';
-        const cnBadge = c.isCarriedNew   ? buildCarryBadgeHtml(c.originalDate || null) : '';
-        return `<span class="tag tag-new">${escapeHtml(c.bookName || '単語')} ${c.rangeStart}〜${c.rangeEnd}${cfBadge}${cnBadge}</span>`;
-      }).join('') || '—'}</td>
-      <td>${row.reviewItems.map(r => {
-        // STEP 8: 復習バッジを統一形式で表示（🔁 復習 Lv.X [N日後] + 🔄 [遅れN日]）
-        const reviewBadge = buildReviewBadgeHtml(r.interval, r.delayedDays);
-        return `<label class="tag tag-review tag-review-t${getIntervalTier(r.interval)} review-check-label${r.done ? ' is-done' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''}${futureLockAttr(r)}><span class="stamp">◎</span>${reviewBadge} ${escapeHtml(r.bookName || '単語')} ${r.rangeStart}〜${r.rangeEnd}</label>`;
-      }).join('') || '—'}</td>
-      <td>${row.refItems.map(c => {
-        // STEP 8: 参考書の未完了繰越バッジを統一形式で表示（carriedForward / isCarriedNew 両対応）
-        const cfBadge = c.carriedForward ? buildCarryBadgeHtml(c.originalDate) : '';
-        const cnBadge = c.isCarriedNew   ? buildCarryBadgeHtml(c.originalDate || null) : '';
-        return `<span class="tag tag-ref">${escapeHtml(c.bookName)} ${c.rangeStart}〜${c.rangeEnd}${cfBadge}${cnBadge}</span>`;
-      }).join('') || '—'}</td>
-      <td>${row.refReviewItems.map(r => {
-        // STEP 8: 参考書復習バッジを統一形式で表示
-        const reviewBadge = buildReviewBadgeHtml(r.interval, r.delayedDays);
-        return `<label class="tag tag-ref-review tag-review-t${getIntervalTier(r.interval)} review-check-label${r.done ? ' is-done' : ''}"><input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''}${futureLockAttr(r)}><span class="stamp">◎</span>${reviewBadge} ${escapeHtml(r.bookName)} ${r.rangeStart}〜${r.rangeEnd}</label>`;
-      }).join('') || '—'}</td>
-    </tr>`;
-  }
-
-  const tableHead = `<thead><tr><th>日付</th><th>単語：新規</th><th>単語：復習</th><th>参考書：新規</th><th>参考書：復習</th></tr></thead>`;
-  const visibleRows = rows.slice(0, INITIAL_VISIBLE_ROWS);
-  const hiddenRows  = rows.slice(INITIAL_VISIBLE_ROWS);
-  const detailsWasOpen = document.getElementById(`schedule-details-${containerId}`)?.open;
-
-  let html = reviewLegendHTML();
-  html += hiddenNoticeHtml; // 45日を超える予定がある場合のみ、表の上に注意書きを出す
-  html += `<table>${tableHead}<tbody>`;
-  visibleRows.forEach(row => { html += rowHtml(row); });
-  html += `</tbody></table>`;
-
-  if (hiddenRows.length > 0) {
-    const openAttr = detailsWasOpen !== false ? ' open' : '';
-    html += `<details class="schedule-details" id="schedule-details-${containerId}"${openAttr}>
-      <summary>残りのスケジュール（${hiddenRows.length}日）</summary>
-      <div class="schedule-details-body schedule-wrap">
-        <table>${tableHead}<tbody>`;
-    hiddenRows.forEach(row => { html += rowHtml(row); });
-    html += `</tbody></table></div></details>`;
-  }
-  // （旧）下部の「範囲を追加していくと自動で延びます」は誤りだったため削除。上部の注意書きに統合。
-  html += `<div class="hint" style="margin-top:8px;">※過去日のスケジュールは非表示です。未達成の新規項目は「今日」に繰り上げられ、それに伴う復習日も自動で再計算されます。4日目以降は「残りのスケジュール」を開いて確認できます。復習はチェックを入れるとクリア済みになります。</div>`;
-  area.innerHTML = html;
-  attachReviewCheckHandlers(area);
-}
-
-// 「表示期間より先にも予定がある」ことを知らせる注意書きHTMLを返す（単語スケジュール表・統合ビュー共通）。
-// 件数が0なら空文字を返す（＝先に予定がなければ何も表示しない）。
-function buildBeyondNoticeHtml(headText, newCount, reviewCount, nextLabel, tailText){
-  if(newCount + reviewCount === 0) return '';
-  const parts = [];
-  if(newCount > 0)    parts.push(`新規${newCount}件`);
-  if(reviewCount > 0) parts.push(`復習${reviewCount}件`);
-  return `<div class="schedule-beyond-notice" style="margin:8px 0;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;font-size:.78rem;color:#9a3412;font-weight:600;">
-    ⚠️ ${headText}これより先にも ${parts.join('・')} の予定があります${nextLabel}。${tailText}
-  </div>`;
-}
-
-function refreshAllSchedules(){
-  renderMergedSchedule('scheduleArea');
-  // refScheduleOutput は削除済み（参考書タブは renderRefTodayCard で管理）
-}
-
 function renderIntegratedSchedule() {
   const container = document.getElementById('integratedScheduleList');
   if (!container) return;
@@ -1585,8 +1442,6 @@ function handleProgressSave(dateStr, baseId) {
   // スケジュール全体を再描画（進捗に基づき再計算される）
   saveReviewDone(); // ← 追加：reviewDoneSet の変更を永続化
   renderIntegratedSchedule();
-  refreshAllSchedules();
-  renderRefTodayCard();
 }
 
 /**
@@ -1630,82 +1485,17 @@ function handleProgressClear(dateStr) {
   dailyProgress = dailyProgress.filter(p => p.date !== dateStr);
   saveDailyProgress();
   renderIntegratedSchedule();
-  refreshAllSchedules();
-  renderRefTodayCard();
 }
 
-function renderTodayNew(){
-  const box = document.getElementById('todayNewBox');
-  if (!box) return;
-  const todayIso = todayISO();
-  const { vocabChunks: allChunks } = buildScheduleData();
-  const todayChunks = allChunks.filter(c => c.date === todayIso);
-  if(todayChunks.length === 0){
-    box.innerHTML = `<div class="empty-mini">今日の新規範囲はありません。</div>`;
-  }else{
-    // ★ 参考書の今日カードと設計を共通化：教材名を併記する
-    box.innerHTML = todayChunks.map(c => `<span class="today-new-tag">${escapeHtml(c.bookName || '単語')} ${c.rangeStart}〜${c.rangeEnd}</span>`).join('');
-  }
-}
-
-/**
- * 参考書タブの「今日やること」カードを描画する。
- * - 今日の新規参考書チャンク（繰り越し含む）を緑タグで表示
- * - 今日の参考書復習をチェックボックス付きで表示
- */
-function renderRefTodayCard() {
-  const newBox    = document.getElementById('refTodayNewBox');
-  const reviewList = document.getElementById('refTodayReviewList');
-  if (!newBox || !reviewList) return;
-
-  const todayStr = todayISO();
-  const { refChunks, refReviews } = buildScheduleData();
-
-  // ── 今日の新規範囲 ──────────────────────────────────────────
-  const todayChunks = refChunks.filter(c => c.date === todayStr);
-  if (todayChunks.length === 0) {
-    newBox.innerHTML = '<div class="empty-mini">今日の参考書範囲はありません。</div>';
-  } else {
-    newBox.innerHTML = todayChunks.map(c => {
-      // STEP 8: 未完了繰越バッジを統一形式で表示（carriedForward / isCarriedNew 両対応）
-      const cfBadge = c.carriedForward
-        ? buildCarryBadgeHtml(c.originalDate)
-        : (c.isCarriedNew ? buildCarryBadgeHtml(c.originalDate || null) : '');
-      return `<span class="today-ref-tag">${escapeHtml(c.bookName)}<br><span style="font-weight:400;font-size:.82em;">p.${c.rangeStart}〜${c.rangeEnd}</span>${cfBadge ? '<br>' + cfBadge : ''}</span>`;
-    }).join('');
-  }
-
-  // ── 今日の復習 ──────────────────────────────────────────────
-  const todayReviews = refReviews.filter(r => r.date === todayStr);
-  if (todayReviews.length === 0) {
-    reviewList.innerHTML = '<div class="empty-mini">今日の参考書復習はありません。</div>';
-  } else {
-    // 未完了を先頭、完了済みを後ろに並べる
-    const sorted = [...todayReviews].sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
-    const itemsHtml = sorted.map(r => {
-      // STEP 8: 復習バッジを統一形式で表示（🔁 復習 Lv.X [N日後] + 🔄 [遅れN日]）
-      const reviewBadge = buildReviewBadgeHtml(r.interval, r.delayedDays);
-      return `<div class="ref-review-item${r.done ? ' is-done' : ''}">
-        <div class="ref-book-info">
-          <span class="ref-book-title">${escapeHtml(r.bookName)}</span>
-          <span class="ref-book-range">p.${r.rangeStart}〜${r.rangeEnd}</span>
-        </div>
-        <label class="tag tag-ref-review tag-review-t${getIntervalTier(r.interval)} review-check-label${r.done ? ' is-done' : ''}"
-               style="cursor:pointer; padding:6px 12px; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">
-          <input type="checkbox" class="review-check" data-key="${r.key}" ${r.done ? 'checked' : ''}>
-          <span class="stamp">◎</span>
-          ${reviewBadge}
-        </label>
-      </div>`;
-    }).join('');
-    reviewList.innerHTML = `<div class="due-list" style="gap:10px;">${itemsHtml}</div>`;
-    attachReviewCheckHandlers(reviewList);
-  }
-
-}
+// ── 互換スタブ ──────────────────────────────────────────────
+// 以前の「単語タブのスケジュール表」「今日の新規」「参考書の今日やること」は、HTML から該当の表示欄
+// (#scheduleArea / #todayNewBox / #refTodayNewBox / #refTodayReviewList) が無くなったため削除した。
+// 外部ファイル（js-ai-features.js など）から呼ばれても壊れないよう、何もしない関数だけ残している。
+function renderMergedSchedule(){}
+function refreshAllSchedules(){}
+function renderTodayNew(){}
+function renderRefTodayCard(){}
 
 function renderAll(){
   renderEntryList();
-  refreshAllSchedules();
-  renderTodayNew();
 }
