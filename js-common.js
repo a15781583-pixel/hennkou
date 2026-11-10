@@ -62,10 +62,10 @@ function loadFromStorage(key, fallback = []) {
 }
 // 【修正】保存に失敗（容量超過・プライベートブラウズ等）しても無言のままだと、
 //   画面上は登録できたように見えるのにリロードで消えてしまう。失敗を true/false で返し、
-//   初回のみ利用者へ知らせる。
+//   利用者へ知らせる（連続して失敗した間は1回だけ。一度成功すると再び通知する）。
 let _storageErrorNotified = false;
 function saveToStorage(key, data) {
-  try { localStorage.setItem(key, JSON.stringify(data)); return true; }
+  try { localStorage.setItem(key, JSON.stringify(data)); _storageErrorNotified = false; return true; } // 成功したら通知フラグを戻す（次に失敗したときも再度知らせる）
   catch(e) {
     console.error('Storage error:', e);
     if (!_storageErrorNotified) {
@@ -83,7 +83,7 @@ function saveToStorage(key, data) {
 // 例外が発生する。利用可能なら randomUUID を使い、そうでなければ
 // タイムスタンプ + ランダム文字列によるフォールバックでIDを生成する。
 function genId(prefix){
-  if (crypto?.randomUUID) return prefix + crypto.randomUUID();
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return prefix + crypto.randomUUID();
   return prefix + Date.now() + '_' + Math.random().toString(36).slice(2);
 }
 // ──────────────────────────────────────────────────────────────
@@ -353,6 +353,52 @@ async function handleSaveEntry(cfg){
   await cfg.save();
   cfg.render();
   cfg.afterSave?.({ wasEditing: isEditing });
+}
+
+/* ───────── 教材（単語/参考書）に紐づく記録の判定・削除（共通） ───────── */
+// 復習キーは `w_<id>_…` / `w_prog_<id>_…`（参考書は先頭が r）。削除・編集時に関連記録を探すために使う。
+function materialKeyMatcher(type, id){
+  const prefix = type === 'word' ? 'w' : 'r';
+  const pres = [`${prefix}_${id}_`, `${prefix}_prog_${id}_`];
+  return k => typeof k === 'string' && pres.some(pre => k.startsWith(pre));
+}
+// 進捗記録 p が、指定の教材（type: 'word'|'book'、id）のものか
+function progressBelongsToMaterial(p, type, id){
+  if (p.type === type) {
+    return (type === 'word' ? (p.originEntryId || p.entryId) : (p.planId || p.entryId)) === id;
+  }
+  if (p.type === type + '-review') return materialKeyMatcher(type, id)(p.reviewKey);
+  return false;
+}
+// その教材に、進捗記録または復習の完了記録が1件でもあるか
+function hasMaterialRecords(type, id){
+  const isMine = materialKeyMatcher(type, id);
+  return dailyProgress.some(p => progressBelongsToMaterial(p, type, id)) ||
+         Array.from(reviewDoneSet).some(isMine);
+}
+// 教材を削除したときに、残った進捗記録・復習の完了記録も取り除く（容量の増加・孤立データ防止）
+function purgeMaterialData(type, id){
+  const isMine = materialKeyMatcher(type, id);
+  dailyProgress = dailyProgress.filter(p => !progressBelongsToMaterial(p, type, id));
+  Array.from(reviewDoneSet).forEach(k => { if (isMine(k)) reviewDoneSet.delete(k); });
+  saveDailyProgress();
+  saveReviewDone();
+}
+// 学習日の割り振りに影響する項目（開始日・期間・曜日・1日の量）が変わったか
+function isScheduleShapeChanged(item, nf){
+  const sorted = a => (a || []).slice().sort((x, y) => x - y).join(',');
+  const oldMode = item.planMode || 'byRange';
+  if (item.startDate !== nf.startDate || oldMode !== nf.planMode) return true;
+  if (sorted(item.weekdays) !== sorted(nf.weekdays)) return true;
+  return nf.planMode === 'byAmount'
+    ? Number(item.amountPerDay) !== Number(nf.amountPerDay)
+    : (item.endDate || '') !== (nf.endDate || '');
+}
+// 同じ教材名で、番号の範囲が重なっている既存の登録を返す（なければ undefined）
+function findOverlappingEntry(list, name, startNum, endNum, excludeId, defaultName = ''){
+  const nm = s => String(s || defaultName).trim();
+  return list.find(e => e.id !== excludeId && nm(e.bookName) === nm(name) &&
+                        e.startNum <= endNum && startNum <= e.endNum);
 }
 
 /* ───────── HTMLエスケープの道具 ───────── */
